@@ -3,6 +3,7 @@ from pathlib import Path
 from app.services.recipe_duplicate_detector import (
     RecipeDuplicateDetector,
 )
+from app.utils.url_normalizer import normalize_url
 
 
 def test_finds_recipe_with_matching_source_url(
@@ -64,3 +65,25 @@ def test_ignores_markdown_without_valid_frontmatter(
     result = detector.find_by_source_url("https://example.com/pasta")
 
     assert result is None
+
+
+def find_by_source_url(
+    self,
+    source_url: str,
+) -> Path | None:
+    if not self.recipes_path.exists():
+        return None
+
+    normalized_source_url = normalize_url(source_url)
+
+    for recipe_path in self.recipes_path.glob("*.md"):
+        frontmatter = self._read_frontmatter(recipe_path)
+        existing_source_url = frontmatter.get("source_url")
+
+        if not isinstance(existing_source_url, str):
+            continue
+
+        if normalize_url(existing_source_url) == normalized_source_url:
+            return recipe_path
+
+    return None

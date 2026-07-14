@@ -2,6 +2,7 @@ from pathlib import Path
 
 from app.models.import_result import ImportResult, ImportStatus
 from app.models.recipe import Ingredient, Recipe, SourceType
+from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
 from app.services.recipe_import_service import RecipeImportService
 from app.services.recipe_storage import RecipeStorage
 
@@ -25,7 +26,7 @@ def make_recipe() -> Recipe:
     return Recipe(
         title="Pasta Carbonara",
         source_type=SourceType.WEBSITE,
-        source_url="https://example.com/carbonara",
+        source_url="https://example.com/pasta",
         ingredients=[
             Ingredient(name="pasta"),
         ],
@@ -50,9 +51,10 @@ def test_import_and_save_creates_markdown_file(
             recipes_path=tmp_path,
             renderer=FakeRenderer(),
         ),
+        duplicate_detector=RecipeDuplicateDetector(tmp_path),
     )
 
-    result, destination = service.import_and_save("https://example.com/carbonara")
+    result, destination = service.import_and_save("https://example.com/pasta")
 
     assert result.status is ImportStatus.SUCCESS
     assert result.recipe is not None
@@ -79,6 +81,7 @@ def test_failed_import_is_not_saved(
             recipes_path=tmp_path,
             renderer=FakeRenderer(),
         ),
+        duplicate_detector=RecipeDuplicateDetector(tmp_path),
     )
 
     result, destination = service.import_and_save("https://example.com/broken")
@@ -102,13 +105,14 @@ def test_duplicate_recipe_returns_partial_result(
             recipes_path=tmp_path,
             renderer=FakeRenderer(),
         ),
+        duplicate_detector=RecipeDuplicateDetector(tmp_path),
     )
 
     first_result, first_destination = service.import_and_save(
-        "https://example.com/carbonara"
+        "https://example.com/pasta"
     )
     second_result, second_destination = service.import_and_save(
-        "https://example.com/carbonara"
+        "https://example.com/pasta"
     )
 
     assert first_result.status is ImportStatus.SUCCESS
@@ -119,3 +123,49 @@ def test_duplicate_recipe_returns_partial_result(
     assert any(
         warning.code == "recipe_already_exists" for warning in second_result.warnings
     )
+
+
+def test_import_does_not_save_duplicate_source_url(
+    tmp_path: Path,
+) -> None:
+    existing_path = tmp_path / "existing-pasta.md"
+    existing_path.write_text(
+        """---
+title: Pasta
+source_url: https://example.com/pasta
+---
+
+# Pasta
+""",
+        encoding="utf-8",
+    )
+
+    recipe = make_recipe()
+    import_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=recipe,
+    )
+
+    importer = FakeImporter(import_result)
+    storage = RecipeStorage(
+        recipes_path=tmp_path,
+        renderer=FakeRenderer(),
+    )
+    duplicate_detector = RecipeDuplicateDetector(tmp_path)
+
+    service = RecipeImportService(
+        importer=importer,
+        storage=storage,
+        duplicate_detector=duplicate_detector,
+    )
+
+    result, destination = service.import_and_save("https://example.com/pasta")
+
+    assert result.status is ImportStatus.PARTIAL
+    assert destination == existing_path
+    assert len(result.warnings) == 1
+    assert result.warnings[0].code == "duplicate_source_url"
+
+    markdown_files = list(tmp_path.glob("*.md"))
+
+    assert markdown_files == [existing_path]

@@ -12,6 +12,7 @@ from app.core.http_client import SafeHttpClient
 from app.importers.website import WebsiteRecipeImporter
 from app.models.import_result import ImportStatus
 from app.services.markdown_renderer import RecipeMarkdownRenderer
+from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
 from app.services.recipe_import_service import RecipeImportService
 from app.services.recipe_storage import RecipeStorage
 
@@ -40,10 +41,12 @@ def create_import_service(
         recipes_path=settings.recipes_path,
         renderer=renderer,
     )
+    duplicate_detector = RecipeDuplicateDetector(recipes_path=settings.recipes_path)
 
     return RecipeImportService(
         importer=importer,
         storage=storage,
+        duplicate_detector=duplicate_detector,
     )
 
 
