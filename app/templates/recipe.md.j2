@@ -1,0 +1,23 @@
+---
+{{ frontmatter }}
+---
+
+# {{ recipe.title }}
+
+## Ingrediënten
+
+{% for ingredient in recipe.ingredients -%}
+- {% if ingredient.quantity is not none %}{{ ingredient.quantity }} {% endif %}{% if ingredient.unit %}{{ ingredient.unit }} {% endif %}{{ ingredient.name }}{% if ingredient.preparation %}, {{ ingredient.preparation }}{% endif %}{% if ingredient.optional %} _(optioneel)_{% endif %}
+{% endfor %}
+
+## Bereiding
+
+{% for instruction in recipe.instructions -%}
+{{ loop.index }}. {{ instruction }}
+{% endfor %}
+
+{% if recipe.source_url %}
+## Bron
+
+[Origineel recept]({{ recipe.source_url }})
+{% endif %}

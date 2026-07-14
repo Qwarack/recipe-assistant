@@ -1,3 +1,5 @@
+from datetime import UTC, datetime
+
 import pytest
 from app.models.import_result import (
     ImportResult,
@@ -89,3 +91,20 @@ def test_failed_import_can_exist_without_recipe() -> None:
 
     assert result.recipe is None
     assert result.status is ImportStatus.FAILED
+
+
+def test_import_result_created_at_uses_utc() -> None:
+    result = ImportResult(
+        status=ImportStatus.FAILED,
+    )
+
+    assert result.created_at.tzinfo is not None
+    assert result.created_at.utcoffset() == UTC.utcoffset(result.created_at)
+
+
+def test_import_result_rejects_naive_created_at() -> None:
+    with pytest.raises(ValidationError):
+        ImportResult(
+            status=ImportStatus.FAILED,
+            created_at=datetime(2026, 7, 14, 12, 0),
+        )

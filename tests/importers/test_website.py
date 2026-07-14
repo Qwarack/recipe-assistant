@@ -548,3 +548,35 @@ def test_website_import_is_partial_for_invalid_quantity() -> None:
     assert result.status is ImportStatus.PARTIAL
     assert result.recipe is not None
     assert any(warning.code == "quantity_not_parsed" for warning in result.warnings)
+
+
+def test_website_import_preserves_source_reference() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": ["1 l water"],
+      "recipeInstructions": ["Boil the water."]
+    }
+    </script>
+    """
+
+    source_url = "https://example.com/soup"
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe(source_url)
+
+    assert result.raw_input_reference == source_url
+
+
+def test_failed_website_import_preserves_source_reference() -> None:
+    html = "<html><body>No recipe here</body></html>"
+
+    source_url = "https://example.com/not-a-recipe"
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe(source_url)
+
+    assert result.status is ImportStatus.FAILED
+    assert result.raw_input_reference == source_url

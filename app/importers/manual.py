@@ -37,6 +37,7 @@ class ManualRecipeImporter(RecipeImporter[Mapping[str, Any]]):
             recipe=recipe,
             extractor=self.extractor_name,
             confidence=1.0,
+            raw_input_reference=str(source),
         )
 
     @staticmethod

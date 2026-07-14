@@ -41,6 +41,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                         field="source_url",
                     )
                 ],
+                raw_input_reference=source,
             )
 
         recipe_data = self._find_recipe_json_ld(html)
@@ -55,6 +56,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                         message="No schema.org Recipe JSON-LD was found",
                     )
                 ],
+                raw_input_reference=source,
             )
 
         try:
@@ -72,6 +74,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                         message=str(exc),
                     )
                 ],
+                raw_input_reference=source,
             )
 
         status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
@@ -82,6 +85,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             extractor=self.extractor_name,
             confidence=0.75 if warnings else 0.95,
             warnings=warnings,
+            raw_input_reference=source,
         )
 
     def _find_recipe_json_ld(
