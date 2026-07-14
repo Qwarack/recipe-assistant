@@ -94,3 +94,25 @@ def test_unit_aliases_are_normalized(
     ingredient = parse_ingredient_line(line)
 
     assert ingredient.unit == expected_unit
+
+
+@pytest.mark.parametrize(
+    ("line", "quantity", "unit", "name"),
+    [
+        ("1/2 tl zout", Decimal("0.5"), "tl", "zout"),
+        ("1 1/2 el olie", Decimal("1.5"), "el", "olie"),
+        ("½ citroen", Decimal("0.5"), None, "citroen"),
+        ("2½ liter melk", Decimal("2.5"), "l", "melk"),
+    ],
+)
+def test_fractional_ingredient_quantities(
+    line: str,
+    quantity: Decimal,
+    unit: str | None,
+    name: str,
+) -> None:
+    ingredient = parse_ingredient_line(line)
+
+    assert ingredient.quantity == quantity
+    assert ingredient.unit == unit
+    assert ingredient.name == name

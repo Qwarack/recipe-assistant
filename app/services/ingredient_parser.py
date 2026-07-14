@@ -1,13 +1,21 @@
 import re
-from decimal import Decimal, InvalidOperation
 
 from app.models.recipe import Ingredient
+from app.services.quantity_parser import parse_quantity
 
 INGREDIENT_PATTERN = re.compile(
     r"""
     ^\s*
     (?:
-        (?P<quantity>\d+(?:[.,]\d+)?)
+        (?P<quantity>
+            \d+\s+\d+/\d+
+            |
+            \d+/\d+
+            |
+            \d+(?:[.,]\d+)?
+            |
+            \d*[¼½¾⅓⅔⅛⅜⅝⅞]
+        )
         \s+
     )?
     (?P<remainder>.+?)
@@ -15,7 +23,6 @@ INGREDIENT_PATTERN = re.compile(
     """,
     re.VERBOSE,
 )
-
 
 UNIT_ALIASES = {
     "g": "g",
@@ -72,7 +79,7 @@ def parse_ingredient_line(line: str) -> Ingredient:
             name=original_text,
         )
 
-    quantity = _parse_quantity(match.group("quantity"))
+    quantity = parse_quantity(match.group("quantity"))
     remainder = match.group("remainder").strip()
 
     unit, name = _split_unit_and_name(remainder)
@@ -83,18 +90,6 @@ def parse_ingredient_line(line: str) -> Ingredient:
         quantity=quantity,
         unit=unit,
     )
-
-
-def _parse_quantity(value: str | None) -> Decimal | None:
-    if value is None:
-        return None
-
-    normalized = value.replace(",", ".")
-
-    try:
-        return Decimal(normalized)
-    except InvalidOperation:
-        return None
 
 
 def _split_unit_and_name(value: str) -> tuple[str | None, str]:
