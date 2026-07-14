@@ -1,7 +1,7 @@
 from decimal import Decimal
 from enum import StrEnum
 
-from pydantic import BaseModel, Field, field_validator
+from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
 
 class SourceType(StrEnum):
@@ -13,30 +13,47 @@ class SourceType(StrEnum):
 
 
 class Ingredient(BaseModel):
+    original_text: str | None = Field(default=None, min_length=1)
     name: str = Field(min_length=1)
     quantity: Decimal | None = Field(default=None, ge=0)
     unit: str | None = None
     preparation: str | None = None
+    category: str | None = None
     optional: bool = False
+
+    @field_validator(
+        "original_text",
+        "name",
+        "unit",
+        "preparation",
+        "category",
+        mode="before",
+    )
+    @classmethod
+    def strip_optional_text(cls, value: object) -> object:
+        if isinstance(value, str):
+            stripped = value.strip()
+            return stripped or None
+
+        return value
 
     @field_validator("name")
     @classmethod
-    def normalize_name(cls, value: str) -> str:
-        normalized = value.strip()
-
-        if not normalized:
+    def validate_name(cls, value: str | None) -> str:
+        if value is None:
             raise ValueError("Ingredient name cannot be empty")
 
-        return normalized
+        return value
 
 
 class Recipe(BaseModel):
     title: str = Field(min_length=1)
     source_type: SourceType
-    source_url: str | None = None
+    source_url: HttpUrl | None = None
     servings: int | None = Field(default=None, gt=0)
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
+    total_time_minutes: int | None = Field(default=None, ge=0)
     ingredients: list[Ingredient] = Field(min_length=1)
     instructions: list[str] = Field(min_length=1)
     tags: list[str] = Field(default_factory=list)
@@ -65,3 +82,36 @@ class Recipe(BaseModel):
     @classmethod
     def normalize_tags(cls, values: list[str]) -> list[str]:
         return sorted({value.strip().lower() for value in values if value.strip()})
+
+    @model_validator(mode="after")
+    def validate_source(self) -> "Recipe":
+        if (
+            self.source_type
+            in {
+                SourceType.WEBSITE,
+                SourceType.INSTAGRAM,
+            }
+            and self.source_url is None
+        ):
+            raise ValueError(
+                "A source URL is required for website and Instagram recipes"
+            )
+
+        return self
+
+    @model_validator(mode="after")
+    def calculate_total_time(self) -> "Recipe":
+        if self.total_time_minutes is None:
+            known_times = [
+                value
+                for value in (
+                    self.prep_time_minutes,
+                    self.cook_time_minutes,
+                )
+                if value is not None
+            ]
+
+            if known_times:
+                self.total_time_minutes = sum(known_times)
+
+        return self
