@@ -87,3 +87,46 @@ def find_by_source_url(
             return recipe_path
 
     return None
+
+
+def test_finds_recipe_with_equivalent_normalized_title(
+    tmp_path: Path,
+) -> None:
+    recipe_path = tmp_path / "pasta.md"
+    recipe_path.write_text(
+        """---
+title: Pasta Carbonara
+source_url: null
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    detector = RecipeDuplicateDetector(tmp_path)
+
+    result = detector.find_by_title("  pasta   carbonara! ")
+
+    assert result == recipe_path
+
+
+def test_returns_none_when_title_does_not_match(
+    tmp_path: Path,
+) -> None:
+    recipe_path = tmp_path / "pasta.md"
+    recipe_path.write_text(
+        """---
+title: Pasta Carbonara
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    detector = RecipeDuplicateDetector(tmp_path)
+
+    result = detector.find_by_title("Tomatensoep")
+
+    assert result is None

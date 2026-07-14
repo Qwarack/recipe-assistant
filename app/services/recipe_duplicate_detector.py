@@ -1,6 +1,7 @@
 from pathlib import Path
 
 import yaml
+from app.utils.title_normalizer import normalize_title
 from app.utils.url_normalizer import normalize_url
 
 
@@ -47,3 +48,24 @@ class RecipeDuplicateDetector:
             return {}
 
         return parsed
+
+    def find_by_title(
+        self,
+        title: str,
+    ) -> Path | None:
+        if not self.recipes_path.exists():
+            return None
+
+        normalized_title = normalize_title(title)
+
+        for recipe_path in self.recipes_path.glob("*.md"):
+            frontmatter = self._read_frontmatter(recipe_path)
+            existing_title = frontmatter.get("title")
+
+            if not isinstance(existing_title, str):
+                continue
+
+            if normalize_title(existing_title) == normalized_title:
+                return recipe_path
+
+        return None
