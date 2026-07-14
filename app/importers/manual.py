@@ -3,6 +3,7 @@ from typing import Any
 
 from pydantic import ValidationError
 
+from app.importers.base import RecipeImporter
 from app.models.import_result import (
     ImportResult,
     ImportStatus,
@@ -11,11 +12,14 @@ from app.models.import_result import (
 from app.models.recipe import Recipe, SourceType
 
 
-class ManualRecipeImporter:
+class ManualRecipeImporter(RecipeImporter[Mapping[str, Any]]):
     extractor_name = "manual"
 
-    def import_recipe(self, data: Mapping[str, Any]) -> ImportResult:
-        recipe_data = dict(data)
+    def import_recipe(
+        self,
+        source: Mapping[str, Any],
+    ) -> ImportResult:
+        recipe_data = dict(source)
         recipe_data["source_type"] = SourceType.MANUAL
         recipe_data["extractor"] = self.extractor_name
 

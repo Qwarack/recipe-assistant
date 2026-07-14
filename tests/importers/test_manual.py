@@ -1,5 +1,6 @@
 from decimal import Decimal
 
+from app.importers.base import RecipeImporter
 from app.importers.manual import ManualRecipeImporter
 from app.models.import_result import ImportStatus
 from app.models.recipe import SourceType
@@ -123,3 +124,9 @@ def test_validation_warning_contains_field_location() -> None:
 
     assert result.status is ImportStatus.FAILED
     assert any(warning.field == "ingredients.0.name" for warning in result.warnings)
+
+
+def test_manual_importer_matches_recipe_importer_protocol() -> None:
+    importer = ManualRecipeImporter()
+
+    assert isinstance(importer, RecipeImporter)
