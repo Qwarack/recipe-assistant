@@ -140,3 +140,116 @@ def test_website_importer_supports_recipe_type_list() -> None:
     assert result.status is ImportStatus.SUCCESS
     assert result.recipe is not None
     assert result.recipe.title == "Bread"
+
+
+def test_website_importer_supports_how_to_sections() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Tomato Sauce",
+      "recipeIngredient": [
+        "2 tomatoes"
+      ],
+      "recipeInstructions": [
+        {
+          "@type": "HowToSection",
+          "name": "Preparation",
+          "itemListElement": [
+            {
+              "@type": "HowToStep",
+              "text": "Chop the tomatoes."
+            },
+            {
+              "@type": "HowToStep",
+              "text": "Cook for ten minutes."
+            }
+          ]
+        }
+      ]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/tomato-sauce")
+
+    assert result.recipe is not None
+    assert result.recipe.instructions == [
+        "Preparation",
+        "Chop the tomatoes.",
+        "Cook for ten minutes.",
+    ]
+
+
+def test_website_importer_supports_string_ingredient() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Salt Water",
+      "recipeIngredient": "1 teaspoon salt",
+      "recipeInstructions": "Mix the salt into the water."
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/salt-water")
+
+    assert result.recipe is not None
+    assert len(result.recipe.ingredients) == 1
+    assert result.recipe.ingredients[0].original_text == "1 teaspoon salt"
+    assert result.recipe.instructions == ["Mix the salt into the water."]
+
+
+def test_website_importer_reads_publisher_name() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "publisher": {
+        "@type": "Organization",
+        "name": "Example Recipes"
+      },
+      "recipeIngredient": ["water"],
+      "recipeInstructions": ["Boil the water."]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/soup")
+
+    assert result.recipe is not None
+    assert result.recipe.source_name == "Example Recipes"
+
+
+def test_website_importer_ignores_invalid_ingredient_values() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": [
+        "water",
+        null,
+        123,
+        "   "
+      ],
+      "recipeInstructions": ["Boil the water."]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/soup")
+
+    assert result.recipe is not None
+    assert len(result.recipe.ingredients) == 1
+    assert result.recipe.ingredients[0].name == "water"

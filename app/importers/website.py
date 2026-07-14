@@ -137,29 +137,58 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         source_url: str,
     ) -> Recipe:
         title = recipe_data["name"]
-        raw_ingredients = recipe_data["recipeIngredient"]
-        raw_instructions = recipe_data["recipeInstructions"]
 
-        ingredients = [
-            Ingredient(
-                original_text=item,
-                name=item,
-            )
-            for item in raw_ingredients
-            if isinstance(item, str) and item.strip()
-        ]
-
-        instructions = self._normalize_instructions(raw_instructions)
+        ingredients = self._normalize_ingredients(recipe_data["recipeIngredient"])
+        instructions = self._normalize_instructions(recipe_data["recipeInstructions"])
 
         return Recipe(
             title=title,
             source_type=SourceType.WEBSITE,
             source_url=source_url,
+            source_name=self._parse_source_name(recipe_data),
             extractor=self.extractor_name,
             servings=self._parse_servings(recipe_data.get("recipeYield")),
             ingredients=ingredients,
             instructions=instructions,
         )
+
+    def _walk_instructions(
+        self,
+        value: Any,
+    ) -> Iterable[str]:
+        if isinstance(value, str):
+            yield value
+            return
+
+        if isinstance(value, list):
+            for item in value:
+                yield from self._walk_instructions(item)
+
+            return
+
+        if not isinstance(value, dict):
+            return
+
+        instruction_type = value.get("@type")
+
+        if instruction_type == "HowToSection":
+            section_name = value.get("name")
+
+            if isinstance(section_name, str) and section_name.strip():
+                yield section_name
+
+            yield from self._walk_instructions(value.get("itemListElement", []))
+            return
+
+        text = value.get("text")
+
+        if isinstance(text, str):
+            yield text
+
+        nested_items = value.get("itemListElement")
+
+        if nested_items is not None:
+            yield from self._walk_instructions(nested_items)
 
     def _normalize_instructions(
         self,
@@ -167,22 +196,11 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
     ) -> list[str]:
         instructions: list[str] = []
 
-        if isinstance(raw_instructions, str):
-            return [raw_instructions.strip()]
+        for text in self._walk_instructions(raw_instructions):
+            normalized = text.strip()
 
-        if not isinstance(raw_instructions, list):
-            return instructions
-
-        for item in raw_instructions:
-            if isinstance(item, str):
-                text = item.strip()
-            elif isinstance(item, dict):
-                text = str(item.get("text", "")).strip()
-            else:
-                continue
-
-            if text:
-                instructions.append(text)
+            if normalized:
+                instructions.append(normalized)
 
         return instructions
 
@@ -197,5 +215,59 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             if digits:
                 servings = int(digits)
                 return servings if servings > 0 else None
+
+        return None
+
+    @staticmethod
+    def _normalize_ingredients(value: Any) -> list[Ingredient]:
+        if isinstance(value, str):
+            raw_values = [value]
+        elif isinstance(value, list):
+            raw_values = value
+        else:
+            return []
+
+        ingredients: list[Ingredient] = []
+
+        for item in raw_values:
+            if not isinstance(item, str):
+                continue
+
+            normalized = item.strip()
+
+            if not normalized:
+                continue
+
+            ingredients.append(
+                Ingredient(
+                    original_text=normalized,
+                    name=normalized,
+                )
+            )
+
+        return ingredients
+
+    @staticmethod
+    def _parse_source_name(
+        recipe_data: dict[str, Any],
+    ) -> str | None:
+        publisher = recipe_data.get("publisher")
+
+        if isinstance(publisher, dict):
+            name = publisher.get("name")
+
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+
+        author = recipe_data.get("author")
+
+        if isinstance(author, dict):
+            name = author.get("name")
+
+            if isinstance(name, str) and name.strip():
+                return name.strip()
+
+        if isinstance(author, str) and author.strip():
+            return author.strip()
 
         return None
