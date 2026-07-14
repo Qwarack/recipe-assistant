@@ -154,3 +154,35 @@ def test_too_many_redirects_are_rejected(
         ),
     ):
         client.get_text("https://example.com/start")
+
+
+def test_stream_is_stopped_when_size_limit_is_exceeded(
+    monkeypatch: pytest.MonkeyPatch,
+) -> None:
+    monkeypatch.setattr(
+        "app.core.http_client.validate_public_http_url",
+        lambda url: url,
+    )
+
+    class LargeStream(httpx.SyncByteStream):
+        def __iter__(self):
+            yield b"a" * 60
+            yield b"b" * 60
+            yield b"c" * 60
+
+    transport = httpx.MockTransport(
+        lambda request: httpx.Response(
+            200,
+            stream=LargeStream(),
+            request=request,
+        )
+    )
+
+    with (
+        make_client(
+            transport,
+            max_response_bytes=100,
+        ) as client,
+        pytest.raises(ResponseTooLargeError),
+    ):
+        client.get_text("https://example.com/large")

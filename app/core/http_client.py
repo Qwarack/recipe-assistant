@@ -1,4 +1,7 @@
 import logging
+from collections.abc import Generator
+from contextlib import contextmanager
+from types import TracebackType
 
 import httpx
 
@@ -10,6 +13,7 @@ DEFAULT_TIMEOUT_SECONDS = 10.0
 DEFAULT_MAX_RESPONSE_BYTES = 2_000_000
 DEFAULT_MAX_REDIRECTS = 3
 DEFAULT_USER_AGENT = "RecipeAssistant/0.1"
+DEFAULT_CHUNK_SIZE = 65_536
 
 
 class HttpFetchError(RuntimeError):
@@ -53,9 +57,9 @@ class SafeHttpClient:
 
     def __exit__(
         self,
-        exc_type: object,
-        exc_value: object,
-        traceback: object,
+        exc_type: type[BaseException] | None,
+        exc_value: BaseException | None,
+        traceback: TracebackType | None,
     ) -> None:
         self.close()
 
@@ -63,53 +67,59 @@ class SafeHttpClient:
         current_url = validate_public_http_url(url)
 
         for redirect_count in range(self.max_redirects + 1):
-            response = self._request(current_url)
+            with self._stream_request(current_url) as response:
+                if response.is_redirect:
+                    if redirect_count >= self.max_redirects:
+                        raise HttpFetchError("Maximum number of redirects exceeded")
 
-            if response.is_redirect:
-                if redirect_count >= self.max_redirects:
-                    raise HttpFetchError("Maximum number of redirects exceeded")
+                    location = response.headers.get("location")
 
-                location = response.headers.get("location")
+                    if not location:
+                        raise HttpFetchError(
+                            "Redirect response did not contain a Location header"
+                        )
 
-                if not location:
-                    raise HttpFetchError(
-                        "Redirect response did not contain a Location header"
-                    )
+                    redirected_url = str(response.url.join(location))
 
-                redirected_url = str(response.url.join(location))
+                    try:
+                        current_url = validate_public_http_url(redirected_url)
+                    except UnsafeUrlError as exc:
+                        raise UnsafeRedirectError(
+                            "Redirect target is not allowed"
+                        ) from exc
+
+                    continue
 
                 try:
-                    current_url = validate_public_http_url(redirected_url)
-                except UnsafeUrlError as exc:
-                    raise UnsafeRedirectError("Redirect target is not allowed") from exc
+                    response.raise_for_status()
+                except httpx.HTTPStatusError as exc:
+                    raise HttpFetchError(
+                        f"Remote server returned HTTP {response.status_code}"
+                    ) from exc
 
-                continue
+                content = self._read_stream_limited(response)
+                encoding = response.encoding or "utf-8"
 
-            try:
-                response.raise_for_status()
-            except httpx.HTTPStatusError as exc:
-                raise HttpFetchError(
-                    f"Remote server returned HTTP {response.status_code}"
-                ) from exc
-
-            content = self._read_limited(response)
-
-            encoding = response.encoding or "utf-8"
-            return content.decode(encoding, errors="replace")
+                return content.decode(encoding, errors="replace")
 
         raise HttpFetchError("Request could not be completed")
 
-    def _request(self, url: str) -> httpx.Response:
+    @contextmanager
+    def _stream_request(
+        self,
+        url: str,
+    ) -> Generator[httpx.Response, None, None]:
         logger.info("Fetching URL: %s", url)
 
         try:
-            return self._client.get(url)
+            with self._client.stream("GET", url) as response:
+                yield response
         except httpx.TimeoutException as exc:
             raise HttpFetchError("Request timed out") from exc
         except httpx.RequestError as exc:
             raise HttpFetchError("HTTP request failed") from exc
 
-    def _read_limited(self, response: httpx.Response) -> bytes:
+    def _read_stream_limited(self, response: httpx.Response) -> bytes:
         content_length = response.headers.get("content-length")
 
         if content_length is not None:
@@ -121,9 +131,15 @@ class SafeHttpClient:
             if declared_size is not None and declared_size > self.max_response_bytes:
                 raise ResponseTooLargeError("Response exceeds the maximum allowed size")
 
-        content = response.content
+        chunks: list[bytes] = []
+        total_size = 0
 
-        if len(content) > self.max_response_bytes:
-            raise ResponseTooLargeError("Response exceeds the maximum allowed size")
+        for chunk in response.iter_bytes(DEFAULT_CHUNK_SIZE):
+            total_size += len(chunk)
 
-        return content
+            if total_size > self.max_response_bytes:
+                raise ResponseTooLargeError("Response exceeds the maximum allowed size")
+
+            chunks.append(chunk)
+
+        return b"".join(chunks)
