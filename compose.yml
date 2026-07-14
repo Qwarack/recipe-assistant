@@ -1,0 +1,13 @@
+services:
+  api:
+    build:
+      context: .
+    container_name: recipe-assistant-api
+    env_file:
+      - .env
+    ports:
+      - "8000:8000"
+    volumes:
+      - ./data/recipes:/data/recipes
+      - ./data/database:/data/database
+    restart: unless-stopped

@@ -1,4 +1,5 @@
 from functools import lru_cache
+from pathlib import Path
 
 from pydantic_settings import BaseSettings, SettingsConfigDict
 
@@ -8,6 +9,8 @@ class Settings(BaseSettings):
     app_version: str = "0.1.0"
     environment: str = "development"
     log_level: str = "INFO"
+    recipes_path: Path = Path("data/recipes")
+    database_path: Path = Path("data/database/recipes.db")
 
     model_config = SettingsConfigDict(
         env_file=".env",
