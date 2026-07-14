@@ -18,6 +18,7 @@ from app.models.recipe import Ingredient, Recipe, SourceType
 from app.services.ingredient_parser import (
     parse_ingredient_line_with_warnings,
 )
+from app.services.servings_parser import parse_servings
 
 
 class WebsiteRecipeImporter(RecipeImporter[str]):
@@ -157,7 +158,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             source_url=source_url,
             source_name=self._parse_source_name(recipe_data),
             extractor=self.extractor_name,
-            servings=self._parse_servings(recipe_data.get("recipeYield")),
+            servings=parse_servings(recipe_data.get("recipeYield")),
             prep_time_minutes=self._parse_duration_minutes(recipe_data.get("prepTime")),
             cook_time_minutes=self._parse_duration_minutes(recipe_data.get("cookTime")),
             total_time_minutes=self._parse_duration_minutes(
@@ -221,20 +222,6 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                 instructions.append(normalized)
 
         return instructions
-
-    @staticmethod
-    def _parse_servings(value: Any) -> int | None:
-        if isinstance(value, int):
-            return value if value > 0 else None
-
-        if isinstance(value, str):
-            digits = "".join(character for character in value if character.isdigit())
-
-            if digits:
-                servings = int(digits)
-                return servings if servings > 0 else None
-
-        return None
 
     @staticmethod
     def _normalize_ingredients(
