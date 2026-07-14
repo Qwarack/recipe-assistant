@@ -158,3 +158,34 @@ def test_ingredient_without_preparation_has_none() -> None:
     ingredient = parse_ingredient_line("400 g spaghetti")
 
     assert ingredient.preparation is None
+
+
+@pytest.mark.parametrize(
+    "line",
+    [
+        "1 el peterselie, optioneel",
+        "1 el peterselie, eventueel",
+        "1 el peterselie, naar wens",
+    ],
+)
+def test_optional_ingredient_is_marked(line: str) -> None:
+    ingredient = parse_ingredient_line(line)
+
+    assert ingredient.name == "peterselie"
+    assert ingredient.optional is True
+    assert ingredient.preparation is None
+
+
+def test_optional_marker_is_removed_from_preparation() -> None:
+    ingredient = parse_ingredient_line("2 tomaten, fijngehakt, optioneel")
+
+    assert ingredient.name == "tomaten"
+    assert ingredient.preparation == "fijngehakt"
+    assert ingredient.optional is True
+
+
+def test_regular_ingredient_is_not_optional() -> None:
+    ingredient = parse_ingredient_line("2 tomaten, fijngehakt")
+
+    assert ingredient.optional is False
+    assert ingredient.preparation == "fijngehakt"

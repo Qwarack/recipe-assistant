@@ -67,6 +67,13 @@ UNIT_ALIASES = {
     "bosjes": "bos",
 }
 
+OPTIONAL_MARKERS = {
+    "optioneel",
+    "optioneel toegevoegd",
+    "eventueel",
+    "naar wens",
+}
+
 
 def parse_ingredient_line(line: str) -> Ingredient:
     original_text = line.strip()
@@ -84,6 +91,7 @@ def parse_ingredient_line(line: str) -> Ingredient:
 
     unit, name_and_preparation = _split_unit_and_name(remainder)
     name, preparation = _split_name_and_preparation(name_and_preparation)
+    preparation, optional = _extract_optional_marker(preparation)
 
     return Ingredient(
         original_text=original_text,
@@ -91,6 +99,7 @@ def parse_ingredient_line(line: str) -> Ingredient:
         quantity=quantity,
         unit=unit,
         preparation=preparation,
+        optional=optional,
     )
 
 
@@ -126,3 +135,24 @@ def _split_name_and_preparation(
         normalized_name,
         normalized_preparation or None,
     )
+
+
+def _extract_optional_marker(
+    preparation: str | None,
+) -> tuple[str | None, bool]:
+    if preparation is None:
+        return None, False
+
+    normalized = preparation.strip().lower()
+
+    if normalized in OPTIONAL_MARKERS:
+        return None, True
+
+    for marker in OPTIONAL_MARKERS:
+        suffix = f", {marker}"
+
+        if normalized.endswith(suffix):
+            cleaned = preparation[: -len(suffix)].strip()
+            return cleaned or None, True
+
+    return preparation, False
