@@ -471,3 +471,80 @@ def test_website_importer_parses_simple_ingredients() -> None:
     assert eggs.name == "eieren"
     assert eggs.quantity == Decimal("2")
     assert eggs.unit == "stuks"
+
+
+def test_website_import_succeeds_for_ingredient_without_quantity() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Pasta",
+      "recipeIngredient": [
+        "400 g spaghetti",
+        "zout naar smaak"
+      ],
+      "recipeInstructions": [
+        "Cook the pasta."
+      ]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/pasta")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.warnings == []
+
+
+def test_website_import_is_success_when_all_ingredients_parse() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Pasta",
+      "recipeIngredient": [
+        "400 g spaghetti",
+        "2 stuks eieren"
+      ],
+      "recipeInstructions": [
+        "Cook the pasta."
+      ]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/pasta")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.warnings == []
+
+
+def test_website_import_is_partial_for_invalid_quantity() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Pasta",
+      "recipeIngredient": [
+        "400 g spaghetti",
+        "1/0 tl zout"
+      ],
+      "recipeInstructions": [
+        "Cook the pasta."
+      ]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/pasta")
+
+    assert result.status is ImportStatus.PARTIAL
+    assert result.recipe is not None
+    assert any(warning.code == "quantity_not_parsed" for warning in result.warnings)

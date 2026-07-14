@@ -1,7 +1,10 @@
 from decimal import Decimal
 
 import pytest
-from app.services.ingredient_parser import parse_ingredient_line
+from app.services.ingredient_parser import (
+    parse_ingredient_line,
+    parse_ingredient_line_with_warnings,
+)
 
 
 @pytest.mark.parametrize(
@@ -189,3 +192,35 @@ def test_regular_ingredient_is_not_optional() -> None:
 
     assert ingredient.optional is False
     assert ingredient.preparation == "fijngehakt"
+
+
+def test_ingredient_without_quantity_has_no_warning() -> None:
+    result = parse_ingredient_line_with_warnings("zout naar smaak")
+
+    assert result.ingredient.name == "zout naar smaak"
+    assert result.warnings == []
+
+
+def test_fully_parsed_ingredient_has_no_warnings() -> None:
+    result = parse_ingredient_line_with_warnings("400 g spaghetti")
+
+    assert result.warnings == []
+
+
+def test_unparseable_quantity_creates_warning() -> None:
+    result = parse_ingredient_line_with_warnings("1/0 tl zout")
+
+    assert any(warning.code == "quantity_not_parsed" for warning in result.warnings)
+
+
+def test_invalid_quantity_preserves_rest_of_ingredient() -> None:
+    result = parse_ingredient_line_with_warnings("1/0 tl zout")
+
+    ingredient = result.ingredient
+
+    assert ingredient.original_text == "1/0 tl zout"
+    assert ingredient.quantity is None
+    assert ingredient.unit == "tl"
+    assert ingredient.name == "zout"
+
+    assert [warning.code for warning in result.warnings] == ["quantity_not_parsed"]

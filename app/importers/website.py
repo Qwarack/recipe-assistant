@@ -15,7 +15,9 @@ from app.models.import_result import (
     ImportWarning,
 )
 from app.models.recipe import Ingredient, Recipe, SourceType
-from app.services.ingredient_parser import parse_ingredient_line
+from app.services.ingredient_parser import (
+    parse_ingredient_line_with_warnings,
+)
 
 
 class WebsiteRecipeImporter(RecipeImporter[str]):
@@ -55,7 +57,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             )
 
         try:
-            recipe = self._convert_recipe_data(
+            recipe, warnings = self._convert_recipe_data(
                 recipe_data=recipe_data,
                 source_url=source,
             )
@@ -71,11 +73,14 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                 ],
             )
 
+        status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
+
         return ImportResult(
-            status=ImportStatus.SUCCESS,
+            status=status,
             recipe=recipe,
             extractor=self.extractor_name,
-            confidence=0.95,
+            confidence=0.75 if warnings else 0.95,
+            warnings=warnings,
         )
 
     def _find_recipe_json_ld(
@@ -138,13 +143,15 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         *,
         recipe_data: dict[str, Any],
         source_url: str,
-    ) -> Recipe:
+    ) -> tuple[Recipe, list[ImportWarning]]:
         title = recipe_data["name"]
 
-        ingredients = self._normalize_ingredients(recipe_data["recipeIngredient"])
+        ingredients, warnings = self._normalize_ingredients(
+            recipe_data["recipeIngredient"]
+        )
         instructions = self._normalize_instructions(recipe_data["recipeInstructions"])
 
-        return Recipe(
+        recipe = Recipe(
             title=title,
             source_type=SourceType.WEBSITE,
             source_url=source_url,
@@ -160,6 +167,8 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             instructions=instructions,
             tags=self._parse_tags(recipe_data),
         )
+
+        return recipe, warnings
 
     def _walk_instructions(
         self,
@@ -228,17 +237,20 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         return None
 
     @staticmethod
-    def _normalize_ingredients(value: Any) -> list[Ingredient]:
+    def _normalize_ingredients(
+        value: Any,
+    ) -> tuple[list[Ingredient], list[ImportWarning]]:
         if isinstance(value, str):
             raw_values = [value]
         elif isinstance(value, list):
             raw_values = value
         else:
-            return []
+            return [], []
 
         ingredients: list[Ingredient] = []
+        warnings: list[ImportWarning] = []
 
-        for item in raw_values:
+        for index, item in enumerate(raw_values):
             if not isinstance(item, str):
                 continue
 
@@ -247,9 +259,19 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             if not normalized:
                 continue
 
-            ingredients.append(parse_ingredient_line(normalized))
+            parse_result = parse_ingredient_line_with_warnings(normalized)
+            ingredients.append(parse_result.ingredient)
 
-        return ingredients
+            for warning in parse_result.warnings:
+                warnings.append(
+                    ImportWarning(
+                        code=warning.code,
+                        message=warning.message,
+                        field=f"ingredients.{index}",
+                    )
+                )
+
+        return ingredients, warnings
 
     @staticmethod
     def _parse_source_name(

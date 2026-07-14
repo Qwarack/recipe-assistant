@@ -1,5 +1,9 @@
 import re
 
+from app.models.ingredient_parse_result import (
+    IngredientParseResult,
+    IngredientParseWarning,
+)
 from app.models.recipe import Ingredient
 from app.services.quantity_parser import parse_quantity
 
@@ -75,34 +79,6 @@ OPTIONAL_MARKERS = {
 }
 
 
-def parse_ingredient_line(line: str) -> Ingredient:
-    original_text = line.strip()
-
-    match = INGREDIENT_PATTERN.match(original_text)
-
-    if match is None:
-        return Ingredient(
-            original_text=original_text,
-            name=original_text,
-        )
-
-    quantity = parse_quantity(match.group("quantity"))
-    remainder = match.group("remainder").strip()
-
-    unit, name_and_preparation = _split_unit_and_name(remainder)
-    name, preparation = _split_name_and_preparation(name_and_preparation)
-    preparation, optional = _extract_optional_marker(preparation)
-
-    return Ingredient(
-        original_text=original_text,
-        name=name,
-        quantity=quantity,
-        unit=unit,
-        preparation=preparation,
-        optional=optional,
-    )
-
-
 def _split_unit_and_name(value: str) -> tuple[str | None, str]:
     first_word, separator, remaining_text = value.partition(" ")
 
@@ -156,3 +132,63 @@ def _extract_optional_marker(
             return cleaned or None, True
 
     return preparation, False
+
+
+def parse_ingredient_line(line: str) -> Ingredient:
+    return parse_ingredient_line_with_warnings(line).ingredient
+
+
+def parse_ingredient_line_with_warnings(
+    line: str,
+) -> IngredientParseResult:
+    original_text = line.strip()
+
+    match = INGREDIENT_PATTERN.match(original_text)
+
+    if match is None:
+        ingredient = Ingredient(
+            original_text=original_text,
+            name=original_text,
+        )
+
+        return IngredientParseResult(
+            ingredient=ingredient,
+            warnings=[
+                IngredientParseWarning(
+                    code="ingredient_pattern_not_matched",
+                    message="Ingredient line could not be structurally parsed",
+                )
+            ],
+        )
+
+    quantity_text = match.group("quantity")
+    quantity = parse_quantity(quantity_text)
+    remainder = match.group("remainder").strip()
+
+    unit, name_and_preparation = _split_unit_and_name(remainder)
+    name, preparation = _split_name_and_preparation(name_and_preparation)
+    preparation, optional = _extract_optional_marker(preparation)
+
+    ingredient = Ingredient(
+        original_text=original_text,
+        name=name,
+        quantity=quantity,
+        unit=unit,
+        preparation=preparation,
+        optional=optional,
+    )
+
+    warnings: list[IngredientParseWarning] = []
+
+    if quantity_text is not None and quantity is None:
+        warnings.append(
+            IngredientParseWarning(
+                code="quantity_not_parsed",
+                message="Ingredient quantity could not be parsed",
+            )
+        )
+
+    return IngredientParseResult(
+        ingredient=ingredient,
+        warnings=warnings,
+    )
