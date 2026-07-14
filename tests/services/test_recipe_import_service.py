@@ -38,9 +38,10 @@ def make_recipe() -> Recipe:
 def test_import_and_save_creates_markdown_file(
     tmp_path: Path,
 ) -> None:
+    recipe = make_recipe()
     import_result = ImportResult(
         status=ImportStatus.SUCCESS,
-        recipe=make_recipe(),
+        recipe=recipe,
     )
 
     service = RecipeImportService(
@@ -54,7 +55,8 @@ def test_import_and_save_creates_markdown_file(
     result, destination = service.import_and_save("https://example.com/carbonara")
 
     assert result.status is ImportStatus.SUCCESS
-    assert destination == tmp_path / "pasta-carbonara.md"
+    short_id = str(recipe.id).split("-")[0]
+    assert destination == tmp_path / f"pasta-carbonara-{short_id}.md"
     assert destination.read_text(encoding="utf-8") == ("# Pasta Carbonara\n")
 
 

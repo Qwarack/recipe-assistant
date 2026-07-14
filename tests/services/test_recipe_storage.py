@@ -36,19 +36,23 @@ def test_storage_saves_recipe_as_markdown(
 
     destination = storage.save(make_recipe())
 
-    assert destination == tmp_path / "pasta-carbonara.md"
+    assert destination.parent == tmp_path
+    assert destination.name.startswith("pasta-carbonara-")
+    assert destination.suffix == ".md"
     assert destination.read_text(encoding="utf-8") == ("# Pasta Carbonara\n")
 
 
 def test_storage_does_not_overwrite_existing_recipe(
     tmp_path: Path,
 ) -> None:
+    recipe = make_recipe()
+
     storage = RecipeStorage(
         recipes_path=tmp_path,
         renderer=FakeRenderer(),
     )
 
-    storage.save(make_recipe())
+    storage.save(recipe)
 
     with pytest.raises(RecipeAlreadyExistsError):
-        storage.save(make_recipe())
+        storage.save(recipe)

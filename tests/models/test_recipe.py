@@ -1,5 +1,6 @@
 from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
+from uuid import UUID
 
 import pytest
 from app.models.recipe import Ingredient, Recipe, SourceType
@@ -229,3 +230,31 @@ def test_imported_at_is_converted_to_utc() -> None:
         30,
         tzinfo=UTC,
     )
+
+
+def test_recipe_generates_unique_id() -> None:
+    first = Recipe(
+        title="Pasta",
+        source_type=SourceType.MANUAL,
+        ingredients=[
+            Ingredient(name="pasta"),
+        ],
+        instructions=[
+            "Cook the pasta.",
+        ],
+    )
+
+    second = Recipe(
+        title="Pasta",
+        source_type=SourceType.MANUAL,
+        ingredients=[
+            Ingredient(name="pasta"),
+        ],
+        instructions=[
+            "Cook the pasta.",
+        ],
+    )
+
+    assert isinstance(first.id, UUID)
+    assert isinstance(second.id, UUID)
+    assert first.id != second.id

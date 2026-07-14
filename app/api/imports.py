@@ -1,3 +1,4 @@
+from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
@@ -20,10 +21,19 @@ router = APIRouter(
 )
 
 
-def create_import_service() -> RecipeImportService:
+def get_http_client() -> Generator[SafeHttpClient, None, None]:
+    with SafeHttpClient() as client:
+        yield client
+
+
+def create_import_service(
+    http_client: Annotated[
+        SafeHttpClient,
+        Depends(get_http_client),
+    ],
+) -> RecipeImportService:
     settings = get_settings()
 
-    http_client = SafeHttpClient()
     importer = WebsiteRecipeImporter(http_client)
     renderer = RecipeMarkdownRenderer()
     storage = RecipeStorage(

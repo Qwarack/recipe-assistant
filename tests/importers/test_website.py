@@ -580,3 +580,24 @@ def test_failed_website_import_preserves_source_reference() -> None:
 
     assert result.status is ImportStatus.FAILED
     assert result.raw_input_reference == source_url
+
+
+def test_website_import_sets_imported_at() -> None:
+    html = """
+    <script type="application/ld+json">
+    {
+      "@type": "Recipe",
+      "name": "Soup",
+      "recipeIngredient": ["1 l water"],
+      "recipeInstructions": ["Boil the water."]
+    }
+    </script>
+    """
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/soup")
+
+    assert result.recipe is not None
+    assert result.recipe.imported_at is not None
+    assert result.recipe.imported_at.tzinfo is not None

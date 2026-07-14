@@ -34,6 +34,7 @@ class RecipeMarkdownRenderer:
     @staticmethod
     def _build_frontmatter(recipe: Recipe) -> dict[str, Any]:
         return {
+            "id": str(recipe.id),
             "type": "recipe",
             "title": recipe.title,
             "source_type": recipe.source_type.value,

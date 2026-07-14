@@ -1,6 +1,7 @@
 from datetime import UTC, datetime
 from decimal import Decimal
 from enum import StrEnum
+from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
@@ -48,6 +49,8 @@ class Ingredient(BaseModel):
 
 
 class Recipe(BaseModel):
+    id: UUID = Field(default_factory=uuid4)
+
     title: str = Field(min_length=1)
     source_type: SourceType
     source_url: HttpUrl | None = None

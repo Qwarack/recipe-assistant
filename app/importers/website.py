@@ -1,6 +1,6 @@
 import json
 from collections.abc import Iterable
-from datetime import timedelta
+from datetime import UTC, datetime, timedelta
 from typing import Any
 
 import isodate
@@ -162,6 +162,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             source_url=source_url,
             source_name=self._parse_source_name(recipe_data),
             extractor=self.extractor_name,
+            imported_at=datetime.now(UTC),
             servings=parse_servings(recipe_data.get("recipeYield")),
             prep_time_minutes=self._parse_duration_minutes(recipe_data.get("prepTime")),
             cook_time_minutes=self._parse_duration_minutes(recipe_data.get("cookTime")),

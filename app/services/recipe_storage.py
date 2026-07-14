@@ -25,7 +25,8 @@ class RecipeStorage:
             exist_ok=True,
         )
 
-        filename = f"{slugify(recipe.title)}.md"
+        short_id = str(recipe.id).split("-")[0]
+        filename = f"{slugify(recipe.title)}-{short_id}.md"
         destination = self.recipes_path / filename
 
         if destination.exists():

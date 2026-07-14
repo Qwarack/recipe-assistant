@@ -38,3 +38,4 @@ def test_renderer_creates_recipe_markdown() -> None:
     assert "1. Cook the pasta." in markdown
     assert "source_type: website" in markdown
     assert "tags:" in markdown
+    assert f"id: {recipe.id}" in markdown
