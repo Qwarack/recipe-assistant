@@ -37,11 +37,11 @@ def test_parse_ingredient_without_quantity() -> None:
     assert ingredient.name == "zout naar smaak"
 
 
-def test_unknown_unit_is_preserved() -> None:
+def test_known_container_unit_is_extracted() -> None:
     ingredient = parse_ingredient_line("2 bosjes peterselie")
 
     assert ingredient.quantity == Decimal("2")
-    assert ingredient.unit == "bosjes"
+    assert ingredient.unit == "bos"
     assert ingredient.name == "peterselie"
 
 
@@ -50,3 +50,47 @@ def test_ingredient_whitespace_is_trimmed() -> None:
 
     assert ingredient.original_text == "400 g spaghetti"
     assert ingredient.name == "spaghetti"
+
+
+def test_descriptive_word_is_not_treated_as_unit() -> None:
+    ingredient = parse_ingredient_line("2 rode uien")
+
+    assert ingredient.quantity == Decimal("2")
+    assert ingredient.unit is None
+    assert ingredient.name == "rode uien"
+
+
+def test_known_unit_is_extracted() -> None:
+    ingredient = parse_ingredient_line("2 kg aardappelen")
+
+    assert ingredient.quantity == Decimal("2")
+    assert ingredient.unit == "kg"
+    assert ingredient.name == "aardappelen"
+
+
+def test_quantity_with_single_word_name() -> None:
+    ingredient = parse_ingredient_line("3 eieren")
+
+    assert ingredient.quantity == Decimal("3")
+    assert ingredient.unit is None
+    assert ingredient.name == "eieren"
+
+
+@pytest.mark.parametrize(
+    ("line", "expected_unit"),
+    [
+        ("1 eetlepel olie", "el"),
+        ("2 eetlepels olie", "el"),
+        ("1 tablespoon oil", "el"),
+        ("3 theelepels zout", "tl"),
+        ("250 gram bloem", "g"),
+        ("1 liter melk", "l"),
+    ],
+)
+def test_unit_aliases_are_normalized(
+    line: str,
+    expected_unit: str,
+) -> None:
+    ingredient = parse_ingredient_line(line)
+
+    assert ingredient.unit == expected_unit

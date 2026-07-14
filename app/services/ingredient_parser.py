@@ -8,11 +8,9 @@ INGREDIENT_PATTERN = re.compile(
     ^\s*
     (?:
         (?P<quantity>\d+(?:[.,]\d+)?)
-        \s*
-        (?P<unit>[a-zA-ZÀ-ÿ]+)?
         \s+
     )?
-    (?P<name>.+?)
+    (?P<remainder>.+?)
     \s*$
     """,
     re.VERBOSE,
@@ -20,23 +18,28 @@ INGREDIENT_PATTERN = re.compile(
 
 
 UNIT_ALIASES = {
+    "g": "g",
     "gram": "g",
     "grams": "g",
     "gr": "g",
+    "kg": "kg",
     "kilogram": "kg",
     "kilograms": "kg",
     "kilo": "kg",
+    "l": "l",
     "liter": "l",
     "liters": "l",
     "litre": "l",
     "litres": "l",
+    "ml": "ml",
     "milliliter": "ml",
     "milliliters": "ml",
-    "ml": "ml",
+    "el": "el",
     "eetlepel": "el",
     "eetlepels": "el",
     "tablespoon": "el",
     "tablespoons": "el",
+    "tl": "tl",
     "theelepel": "tl",
     "theelepels": "tl",
     "teaspoon": "tl",
@@ -45,6 +48,16 @@ UNIT_ALIASES = {
     "stuks": "stuks",
     "piece": "stuks",
     "pieces": "stuks",
+    "teen": "stuks",
+    "tenen": "stuks",
+    "blik": "blik",
+    "blikken": "blik",
+    "blikje": "blik",
+    "blikjes": "blik",
+    "bos": "bos",
+    "bossen": "bos",
+    "bosje": "bos",
+    "bosjes": "bos",
 }
 
 
@@ -60,8 +73,9 @@ def parse_ingredient_line(line: str) -> Ingredient:
         )
 
     quantity = _parse_quantity(match.group("quantity"))
-    unit = _normalize_unit(match.group("unit"))
-    name = match.group("name").strip()
+    remainder = match.group("remainder").strip()
+
+    unit, name = _split_unit_and_name(remainder)
 
     return Ingredient(
         original_text=original_text,
@@ -83,10 +97,17 @@ def _parse_quantity(value: str | None) -> Decimal | None:
         return None
 
 
-def _normalize_unit(value: str | None) -> str | None:
-    if value is None:
-        return None
+def _split_unit_and_name(value: str) -> tuple[str | None, str]:
+    first_word, separator, remaining_text = value.partition(" ")
 
+    normalized_unit = _normalize_known_unit(first_word)
+
+    if normalized_unit is None or not separator:
+        return None, value
+
+    return normalized_unit, remaining_text.strip()
+
+
+def _normalize_known_unit(value: str) -> str | None:
     normalized = value.strip().lower()
-
-    return UNIT_ALIASES.get(normalized, normalized)
+    return UNIT_ALIASES.get(normalized)
