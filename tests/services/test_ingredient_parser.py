@@ -116,3 +116,45 @@ def test_fractional_ingredient_quantities(
     assert ingredient.quantity == quantity
     assert ingredient.unit == unit
     assert ingredient.name == name
+
+
+@pytest.mark.parametrize(
+    ("line", "name", "preparation"),
+    [
+        (
+            "2 rode uien, fijngesneden",
+            "rode uien",
+            "fijngesneden",
+        ),
+        (
+            "400 g tomaten, uitgelekt",
+            "tomaten",
+            "uitgelekt",
+        ),
+        (
+            "1 teen knoflook, geperst",
+            "knoflook",
+            "geperst",
+        ),
+        (
+            "2 tomaten, ontveld, grof gehakt",
+            "tomaten",
+            "ontveld, grof gehakt",
+        ),
+    ],
+)
+def test_ingredient_preparation_is_extracted(
+    line: str,
+    name: str,
+    preparation: str,
+) -> None:
+    ingredient = parse_ingredient_line(line)
+
+    assert ingredient.name == name
+    assert ingredient.preparation == preparation
+
+
+def test_ingredient_without_preparation_has_none() -> None:
+    ingredient = parse_ingredient_line("400 g spaghetti")
+
+    assert ingredient.preparation is None

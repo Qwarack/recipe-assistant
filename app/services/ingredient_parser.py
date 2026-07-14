@@ -82,13 +82,15 @@ def parse_ingredient_line(line: str) -> Ingredient:
     quantity = parse_quantity(match.group("quantity"))
     remainder = match.group("remainder").strip()
 
-    unit, name = _split_unit_and_name(remainder)
+    unit, name_and_preparation = _split_unit_and_name(remainder)
+    name, preparation = _split_name_and_preparation(name_and_preparation)
 
     return Ingredient(
         original_text=original_text,
         name=name,
         quantity=quantity,
         unit=unit,
+        preparation=preparation,
     )
 
 
@@ -106,3 +108,21 @@ def _split_unit_and_name(value: str) -> tuple[str | None, str]:
 def _normalize_known_unit(value: str) -> str | None:
     normalized = value.strip().lower()
     return UNIT_ALIASES.get(normalized)
+
+
+def _split_name_and_preparation(
+    value: str,
+) -> tuple[str, str | None]:
+    name, separator, preparation = value.partition(",")
+
+    normalized_name = name.strip()
+
+    if not separator:
+        return normalized_name, None
+
+    normalized_preparation = preparation.strip()
+
+    return (
+        normalized_name,
+        normalized_preparation or None,
+    )
