@@ -1,7 +1,9 @@
 import json
 from collections.abc import Iterable
+from datetime import timedelta
 from typing import Any
 
+import isodate
 from bs4 import BeautifulSoup
 from pydantic import ValidationError
 
@@ -148,8 +150,14 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             source_name=self._parse_source_name(recipe_data),
             extractor=self.extractor_name,
             servings=self._parse_servings(recipe_data.get("recipeYield")),
+            prep_time_minutes=self._parse_duration_minutes(recipe_data.get("prepTime")),
+            cook_time_minutes=self._parse_duration_minutes(recipe_data.get("cookTime")),
+            total_time_minutes=self._parse_duration_minutes(
+                recipe_data.get("totalTime")
+            ),
             ingredients=ingredients,
             instructions=instructions,
+            tags=self._parse_tags(recipe_data),
         )
 
     def _walk_instructions(
@@ -271,3 +279,60 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             return author.strip()
 
         return None
+
+    @staticmethod
+    def _parse_duration_minutes(value: Any) -> int | None:
+        if not isinstance(value, str) or not value.strip():
+            return None
+
+        try:
+            duration = isodate.parse_duration(value.strip())
+        except (isodate.ISO8601Error, ValueError):
+            return None
+
+        if not isinstance(duration, timedelta):
+            return None
+
+        total_seconds = duration.total_seconds()
+
+        if total_seconds < 0:
+            return None
+
+        return round(total_seconds / 60)
+
+    @staticmethod
+    def _normalize_string_list(value: Any) -> list[str]:
+        if isinstance(value, str):
+            raw_values = value.split(",")
+        elif isinstance(value, list):
+            raw_values = value
+        else:
+            return []
+
+        normalized_values: set[str] = set()
+
+        for item in raw_values:
+            if not isinstance(item, str):
+                continue
+
+            normalized = item.strip().lower()
+
+            if normalized:
+                normalized_values.add(normalized)
+
+        return sorted(normalized_values)
+
+    def _parse_tags(
+        self,
+        recipe_data: dict[str, Any],
+    ) -> list[str]:
+        tags: set[str] = set()
+
+        for field_name in (
+            "keywords",
+            "recipeCategory",
+            "recipeCuisine",
+        ):
+            tags.update(self._normalize_string_list(recipe_data.get(field_name)))
+
+        return sorted(tags)

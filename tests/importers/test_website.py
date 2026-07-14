@@ -253,3 +253,177 @@ def test_website_importer_ignores_invalid_ingredient_values() -> None:
     assert result.recipe is not None
     assert len(result.recipe.ingredients) == 1
     assert result.recipe.ingredients[0].name == "water"
+
+    def test_website_importer_parses_iso_durations() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Pasta",
+        "prepTime": "PT15M",
+        "cookTime": "PT30M",
+        "totalTime": "PT45M",
+        "recipeIngredient": ["pasta"],
+        "recipeInstructions": ["Cook the pasta."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/pasta")
+
+        assert result.recipe is not None
+        assert result.recipe.prep_time_minutes == 15
+        assert result.recipe.cook_time_minutes == 30
+        assert result.recipe.total_time_minutes == 45
+
+    def test_total_time_is_calculated_when_json_ld_omits_it() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Pasta",
+        "prepTime": "PT10M",
+        "cookTime": "PT20M",
+        "recipeIngredient": ["pasta"],
+        "recipeInstructions": ["Cook the pasta."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/pasta")
+
+        assert result.recipe is not None
+        assert result.recipe.total_time_minutes == 30
+
+    def test_invalid_duration_is_ignored() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Pasta",
+        "prepTime": "not-a-duration",
+        "recipeIngredient": ["pasta"],
+        "recipeInstructions": ["Cook the pasta."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/pasta")
+
+        assert result.status is ImportStatus.SUCCESS
+        assert result.recipe is not None
+        assert result.recipe.prep_time_minutes is None
+
+    def test_duration_with_hours_and_minutes_is_parsed() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Stew",
+        "cookTime": "PT1H30M",
+        "recipeIngredient": ["vegetables"],
+        "recipeInstructions": ["Cook slowly."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/stew")
+
+        assert result.recipe is not None
+        assert result.recipe.cook_time_minutes == 90
+
+    def test_website_importer_normalizes_recipe_metadata_as_tags() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Pasta",
+        "keywords": "Quick, Pasta, Family",
+        "recipeCategory": "Dinner",
+        "recipeCuisine": [
+            "Italian",
+            "European"
+        ],
+        "recipeIngredient": ["pasta"],
+        "recipeInstructions": ["Cook the pasta."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/pasta")
+
+        assert result.recipe is not None
+        assert result.recipe.tags == [
+            "dinner",
+            "european",
+            "family",
+            "italian",
+            "pasta",
+            "quick",
+        ]
+
+    def test_website_importer_removes_duplicate_tags() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Pasta",
+        "keywords": "Pasta, Quick, pasta",
+        "recipeCategory": [
+            "Dinner",
+            "Quick"
+        ],
+        "recipeCuisine": "Italian, italian",
+        "recipeIngredient": ["pasta"],
+        "recipeInstructions": ["Cook the pasta."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/pasta")
+
+        assert result.recipe is not None
+        assert result.recipe.tags == [
+            "dinner",
+            "italian",
+            "pasta",
+            "quick",
+        ]
+
+    def test_website_importer_ignores_invalid_tag_values() -> None:
+        html = """
+        <script type="application/ld+json">
+        {
+        "@type": "Recipe",
+        "name": "Soup",
+        "keywords": [
+            "Soup",
+            null,
+            123,
+            "   "
+        ],
+        "recipeCategory": null,
+        "recipeIngredient": ["water"],
+        "recipeInstructions": ["Boil the water."]
+        }
+        </script>
+        """
+
+        importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+        result = importer.import_recipe("https://example.com/soup")
+
+        assert result.recipe is not None
+        assert result.recipe.tags == ["soup"]
