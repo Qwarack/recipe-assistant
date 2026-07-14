@@ -18,7 +18,7 @@ class FakeImporter:
 
 class FakeRenderer:
     def render(self, recipe: Recipe) -> str:
-        return f"# {recipe.title}\n"
+        return f"# {recipe.title}\nimport_id: {recipe.import_id}\n"
 
 
 def make_recipe() -> Recipe:
@@ -55,9 +55,15 @@ def test_import_and_save_creates_markdown_file(
     result, destination = service.import_and_save("https://example.com/carbonara")
 
     assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.recipe.import_id == result.import_id
+    assert result.recipe.import_id is not None
+
     short_id = str(recipe.id).split("-")[0]
     assert destination == tmp_path / f"pasta-carbonara-{short_id}.md"
-    assert destination.read_text(encoding="utf-8") == ("# Pasta Carbonara\n")
+    markdown = destination.read_text(encoding="utf-8")
+    assert markdown == f"# Pasta Carbonara\nimport_id: {result.import_id}\n"
+    assert str(result.import_id) in markdown
 
 
 def test_failed_import_is_not_saved(

@@ -35,6 +35,9 @@ class RecipeMarkdownRenderer:
     def _build_frontmatter(recipe: Recipe) -> dict[str, Any]:
         return {
             "id": str(recipe.id),
+            "import_id": (
+                str(recipe.import_id) if recipe.import_id is not None else None
+            ),
             "type": "recipe",
             "title": recipe.title,
             "source_type": recipe.source_type.value,

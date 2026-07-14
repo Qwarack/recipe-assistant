@@ -26,8 +26,20 @@ class RecipeImportService:
         if result.recipe is None:
             return result, None
 
+        recipe = result.recipe.model_copy(
+            update={
+                "import_id": result.import_id,
+            }
+        )
+
+        result = result.model_copy(
+            update={
+                "recipe": recipe,
+            }
+        )
+
         try:
-            destination = self.storage.save(result.recipe)
+            destination = self.storage.save(recipe)
         except RecipeAlreadyExistsError as exc:
             duplicate_warning = ImportWarning(
                 code="recipe_already_exists",

@@ -1,11 +1,24 @@
 from decimal import Decimal
+from uuid import uuid4
 
 from app.models.recipe import Ingredient, Recipe, SourceType
 from app.services.markdown_renderer import RecipeMarkdownRenderer
 
 
+def make_recipe() -> Recipe:
+    return Recipe(
+        title="Pasta Carbonara",
+        source_type=SourceType.WEBSITE,
+        source_url="https://example.com/carbonara",
+        ingredients=[Ingredient(name="spaghetti")],
+        instructions=["Cook the pasta."],
+    )
+
+
 def test_renderer_creates_recipe_markdown() -> None:
+    import_id = uuid4()
     recipe = Recipe(
+        import_id=import_id,
         title="Pasta Carbonara",
         source_type=SourceType.WEBSITE,
         source_url="https://example.com/carbonara",
@@ -39,3 +52,12 @@ def test_renderer_creates_recipe_markdown() -> None:
     assert "source_type: website" in markdown
     assert "tags:" in markdown
     assert f"id: {recipe.id}" in markdown
+    assert f"import_id: {import_id}" in markdown
+
+
+def test_renderer_handles_recipe_without_import_id() -> None:
+    recipe = make_recipe()
+
+    markdown = RecipeMarkdownRenderer().render(recipe)
+
+    assert "import_id: null" in markdown
