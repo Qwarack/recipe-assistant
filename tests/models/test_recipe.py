@@ -1,9 +1,9 @@
+from datetime import UTC, datetime, timedelta, timezone
 from decimal import Decimal
 
 import pytest
-from pydantic import ValidationError
-
 from app.models.recipe import Ingredient, Recipe, SourceType
+from pydantic import ValidationError
 
 
 def test_recipe_can_be_created() -> None:
@@ -159,3 +159,73 @@ def test_ingredient_can_be_serialized() -> None:
     assert data["name"] == "spaghetti"
     assert data["quantity"] == Decimal("400")
     assert data["original_text"] == "400 g spaghetti"
+
+
+def test_recipe_preserves_source_metadata() -> None:
+    imported_at = datetime(2026, 7, 14, 18, 30, tzinfo=UTC)
+
+    recipe = Recipe(
+        title="Pasta",
+        source_type=SourceType.WEBSITE,
+        source_url="https://example.com/pasta",
+        source_name="  Example Recipes  ",
+        extractor="  schema_org  ",
+        imported_at=imported_at,
+        ingredients=[
+            Ingredient(name="pasta"),
+        ],
+        instructions=[
+            "Cook the pasta.",
+        ],
+    )
+
+    assert recipe.source_name == "Example Recipes"
+    assert recipe.extractor == "schema_org"
+    assert recipe.imported_at == imported_at
+
+
+def test_imported_at_requires_timezone() -> None:
+    with pytest.raises(ValidationError):
+        Recipe(
+            title="Pasta",
+            source_type=SourceType.MANUAL,
+            imported_at=datetime(2026, 7, 14, 18, 30),
+            ingredients=[
+                Ingredient(name="pasta"),
+            ],
+            instructions=[
+                "Cook the pasta.",
+            ],
+        )
+
+
+def test_imported_at_is_converted_to_utc() -> None:
+    local_timezone = timezone(timedelta(hours=2))
+
+    recipe = Recipe(
+        title="Pasta",
+        source_type=SourceType.MANUAL,
+        imported_at=datetime(
+            2026,
+            7,
+            14,
+            20,
+            30,
+            tzinfo=local_timezone,
+        ),
+        ingredients=[
+            Ingredient(name="pasta"),
+        ],
+        instructions=[
+            "Cook the pasta.",
+        ],
+    )
+
+    assert recipe.imported_at == datetime(
+        2026,
+        7,
+        14,
+        18,
+        30,
+        tzinfo=UTC,
+    )
