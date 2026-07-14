@@ -51,6 +51,7 @@ class Ingredient(BaseModel):
 class Recipe(BaseModel):
     id: UUID = Field(default_factory=uuid4)
     import_id: UUID | None = None
+    content_hash: str | None = None
 
     title: str = Field(min_length=1)
     source_type: SourceType

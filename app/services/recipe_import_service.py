@@ -7,6 +7,7 @@ from app.services.recipe_storage import (
     RecipeAlreadyExistsError,
     RecipeStorage,
 )
+from app.utils.recipe_hash import calculate_recipe_hash
 
 
 class RecipeImportService:
@@ -32,6 +33,7 @@ class RecipeImportService:
         recipe = result.recipe.model_copy(
             update={
                 "import_id": result.import_id,
+                "content_hash": calculate_recipe_hash(result.recipe),
             }
         )
 

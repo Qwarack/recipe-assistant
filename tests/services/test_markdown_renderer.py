@@ -19,6 +19,7 @@ def test_renderer_creates_recipe_markdown() -> None:
     import_id = uuid4()
     recipe = Recipe(
         import_id=import_id,
+        content_hash="abc123",
         title="Pasta Carbonara",
         source_type=SourceType.WEBSITE,
         source_url="https://example.com/carbonara",
@@ -53,6 +54,7 @@ def test_renderer_creates_recipe_markdown() -> None:
     assert "tags:" in markdown
     assert f"id: {recipe.id}" in markdown
     assert f"import_id: {import_id}" in markdown
+    assert "content_hash: abc123" in markdown
 
 
 def test_renderer_handles_recipe_without_import_id() -> None:

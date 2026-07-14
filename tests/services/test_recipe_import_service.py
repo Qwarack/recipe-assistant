@@ -66,6 +66,8 @@ def test_import_and_save_creates_markdown_file(
     markdown = destination.read_text(encoding="utf-8")
     assert markdown == f"# Pasta Carbonara\nimport_id: {result.import_id}\n"
     assert str(result.import_id) in markdown
+    assert result.recipe.content_hash is not None
+    assert len(result.recipe.content_hash) == 64
 
 
 def test_failed_import_is_not_saved(

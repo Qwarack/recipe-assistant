@@ -38,6 +38,7 @@ class RecipeMarkdownRenderer:
             "import_id": (
                 str(recipe.import_id) if recipe.import_id is not None else None
             ),
+            "content_hash": recipe.content_hash,
             "type": "recipe",
             "title": recipe.title,
             "source_type": recipe.source_type.value,
