@@ -15,6 +15,7 @@ from app.models.import_result import (
     ImportWarning,
 )
 from app.models.recipe import Ingredient, Recipe, SourceType
+from app.services.ingredient_parser import parse_ingredient_line
 
 
 class WebsiteRecipeImporter(RecipeImporter[str]):
@@ -246,12 +247,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             if not normalized:
                 continue
 
-            ingredients.append(
-                Ingredient(
-                    original_text=normalized,
-                    name=normalized,
-                )
-            )
+            ingredients.append(parse_ingredient_line(normalized))
 
         return ingredients
 
