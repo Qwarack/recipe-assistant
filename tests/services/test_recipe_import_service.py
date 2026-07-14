@@ -169,3 +169,56 @@ source_url: https://example.com/pasta
     markdown_files = list(tmp_path.glob("*.md"))
 
     assert markdown_files == [existing_path]
+
+
+def test_import_saves_recipe_with_duplicate_title_warning(
+    tmp_path: Path,
+) -> None:
+    existing_path = tmp_path / "existing-pasta.md"
+    existing_path.write_text(
+        """---
+title: Pasta Carbonara
+source_url: https://example.com/old-pasta
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    recipe = make_recipe().model_copy(
+        update={
+            "source_url": "https://example.com/new-pasta",
+        }
+    )
+
+    import_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=recipe,
+    )
+
+    importer = FakeImporter(import_result)
+    storage = RecipeStorage(
+        recipes_path=tmp_path,
+        renderer=FakeRenderer(),
+    )
+    duplicate_detector = RecipeDuplicateDetector(tmp_path)
+
+    service = RecipeImportService(
+        importer=importer,
+        storage=storage,
+        duplicate_detector=duplicate_detector,
+    )
+
+    result, destination = service.import_and_save("https://example.com/new-pasta")
+
+    assert result.status is ImportStatus.PARTIAL
+    assert destination is not None
+    assert destination.exists()
+
+    assert len(result.warnings) == 1
+    assert result.warnings[0].code == "duplicate_title"
+
+    markdown_files = list(tmp_path.glob("*.md"))
+
+    assert len(markdown_files) == 2

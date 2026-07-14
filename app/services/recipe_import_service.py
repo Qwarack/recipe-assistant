@@ -67,6 +67,27 @@ class RecipeImportService:
 
                 return duplicate_result, existing_path
 
+        existing_title_path = self.duplicate_detector.find_by_title(recipe.title)
+
+        if existing_title_path is not None:
+            title_warning = ImportWarning(
+                code="duplicate_title",
+                message=(
+                    "A recipe with a similar title already exists at "
+                    f"{existing_title_path}."
+                ),
+            )
+
+            result = result.model_copy(
+                update={
+                    "status": ImportStatus.PARTIAL,
+                    "warnings": [
+                        *result.warnings,
+                        title_warning,
+                    ],
+                }
+            )
+
         try:
             destination = self.storage.save(recipe)
         except RecipeAlreadyExistsError as exc:
