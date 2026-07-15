@@ -8,6 +8,11 @@ from app.bot.embeds import build_recipe_import_embed
 
 logger = logging.getLogger(__name__)
 
+STRONG_DUPLICATE_WARNING_CODES = {
+    "duplicate_source_url",
+    "duplicate_content",
+}
+
 
 class RecipeImportView(discord.ui.View):
     def __init__(
@@ -47,10 +52,7 @@ class RecipeImportView(discord.ui.View):
         interaction: discord.Interaction,
         button: discord.ui.Button,
     ) -> None:
-        await interaction.response.defer(
-            thinking=True,
-            ephemeral=True,
-        )
+        await interaction.response.defer()
 
         self._disable_all_buttons()
 
@@ -73,9 +75,37 @@ class RecipeImportView(discord.ui.View):
             )
             return
 
+        has_duplicate = any(
+            warning.get("code") in STRONG_DUPLICATE_WARNING_CODES
+            for warning in result.warnings
+        )
+
+        if has_duplicate:
+            duplicate_view = DuplicateRecipeView(
+                api_client=self.api_client,
+                source_url=self.source_url,
+                owner_id=self.owner_id,
+            )
+            embed = build_recipe_import_embed(result)
+
+            await interaction.edit_original_response(
+                embed=embed,
+                view=duplicate_view,
+            )
+            await interaction.followup.send(
+                (
+                    "Dit recept lijkt al te bestaan. "
+                    "Kies of je toch een nieuwe kopie wilt opslaan."
+                ),
+                ephemeral=True,
+            )
+
+            self.stop()
+            return
+
         embed = build_recipe_import_embed(result)
 
-        await interaction.message.edit(
+        await interaction.edit_original_response(
             embed=embed,
             view=self,
         )
@@ -119,3 +149,95 @@ class RecipeImportView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
+
+
+class DuplicateRecipeView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        api_client: RecipeApiClient,
+        source_url: str,
+        owner_id: int,
+        timeout: float = 300,
+    ) -> None:
+        super().__init__(timeout=timeout)
+
+        self.api_client = api_client
+        self.source_url = source_url
+        self.owner_id = owner_id
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction,
+    ) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+
+        await interaction.response.send_message(
+            "Alleen de gebruiker die deze import startte mag deze knoppen gebruiken.",
+            ephemeral=True,
+        )
+        return False
+
+    @discord.ui.button(
+        label="Toch opnieuw opslaan",
+        style=discord.ButtonStyle.danger,
+    )
+    async def force_save_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        await interaction.response.defer()
+
+        try:
+            result = await self.api_client.import_website_recipe(
+                self.source_url,
+                force=True,
+            )
+        except httpx.HTTPStatusError as exc:
+            await interaction.followup.send(
+                (
+                    "Het recept kon niet opnieuw worden opgeslagen. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Force-saving Discord recipe import failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        embed = build_recipe_import_embed(result)
+
+        await interaction.edit_original_response(
+            embed=embed,
+            view=None,
+        )
+        await interaction.followup.send(
+            "Het recept is opnieuw opgeslagen.",
+            ephemeral=True,
+        )
+
+        self.stop()
+
+    @discord.ui.button(
+        label="Niet opslaan",
+        style=discord.ButtonStyle.secondary,
+    )
+    async def cancel_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        await interaction.response.edit_message(
+            content="Bestaand recept behouden.",
+            embed=None,
+            view=None,
+        )
+
+        self.stop()
