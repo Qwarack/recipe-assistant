@@ -24,6 +24,8 @@ class RecipeImportService:
     def import_and_save(
         self,
         source: str,
+        *,
+        force: bool = False,
     ) -> tuple[ImportResult, Path | None]:
         result = self.importer.import_recipe(source)
 
@@ -50,7 +52,7 @@ class RecipeImportService:
                 str(recipe.source_url)
             )
 
-            if existing_path is not None:
+            if existing_path is not None and not force:
                 duplicate_warning = ImportWarning(
                     code="duplicate_source_url",
                     message=(
@@ -73,7 +75,7 @@ class RecipeImportService:
 
         existing_hash_path = self.duplicate_detector.find_by_content_hash(content_hash)
 
-        if existing_hash_path is not None:
+        if existing_hash_path is not None and not force:
             duplicate_warning = ImportWarning(
                 code="duplicate_content",
                 message=(

@@ -62,7 +62,7 @@ def import_website_recipe(
         Depends(create_import_service),
     ],
 ) -> WebsiteImportResponse:
-    result, destination = service.import_and_save(str(request.url))
+    result, destination = service.import_and_save(str(request.url), force=request.force)
 
     if result.status is ImportStatus.FAILED:
         raise HTTPException(

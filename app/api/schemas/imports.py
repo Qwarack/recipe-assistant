@@ -7,6 +7,7 @@ from pydantic import BaseModel, HttpUrl
 
 class WebsiteImportRequest(BaseModel):
     url: HttpUrl
+    force: bool = False
 
 
 class WebsiteImportResponse(BaseModel):

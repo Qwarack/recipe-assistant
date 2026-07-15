@@ -278,3 +278,59 @@ content_hash: {content_hash}
     markdown_files = list(tmp_path.glob("*.md"))
 
     assert markdown_files == [existing_path]
+
+
+def test_force_import_saves_duplicate_content(
+    tmp_path: Path,
+) -> None:
+    recipe = make_recipe().model_copy(
+        update={
+            "source_url": "https://example.com/new-source",
+        }
+    )
+
+    content_hash = calculate_recipe_hash(recipe)
+
+    existing_path = tmp_path / "existing-pasta.md"
+    existing_path.write_text(
+        f"""---
+title: Pasta Carbonara
+source_url: https://example.com/old-source
+content_hash: {content_hash}
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    import_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=recipe,
+    )
+
+    importer = FakeImporter(import_result)
+    storage = RecipeStorage(
+        recipes_path=tmp_path,
+        renderer=FakeRenderer(),
+    )
+    duplicate_detector = RecipeDuplicateDetector(tmp_path)
+
+    service = RecipeImportService(
+        importer=importer,
+        storage=storage,
+        duplicate_detector=duplicate_detector,
+    )
+
+    result, destination = service.import_and_save(
+        "https://example.com/new-source",
+        force=True,
+    )
+
+    assert destination is not None
+    assert destination != existing_path
+    assert destination.exists()
+
+    markdown_files = list(tmp_path.glob("*.md"))
+
+    assert len(markdown_files) == 2

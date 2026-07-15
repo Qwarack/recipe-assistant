@@ -19,6 +19,8 @@ class FakeImportService:
     def import_and_save(
         self,
         source: str,
+        *,
+        force: bool = False,
     ) -> tuple[ImportResult, Path | None]:
         return self.result, self.destination
 
