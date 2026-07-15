@@ -7,6 +7,7 @@ from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient
 from app.bot.embeds import build_recipe_import_embed
+from app.bot.views import RecipeImportView
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -80,10 +81,20 @@ def create_bot() -> commands.Bot:
 
         embed = build_recipe_import_embed(result)
 
-        await interaction.followup.send(
-            embed=embed,
-            ephemeral=True,
+        view = RecipeImportView(
+            api_client=api_client,
+            source_url=url,
+            owner_id=interaction.user.id,
         )
+
+        message = await interaction.followup.send(
+            embed=embed,
+            view=view,
+            ephemeral=True,
+            wait=True,
+        )
+
+        view.message = message
 
     bot.tree.add_command(recipe_group)
 
