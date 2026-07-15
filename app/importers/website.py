@@ -369,7 +369,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         import_id: UUID,
     ) -> ImportResult:
         try:
-            recipe = self.fallback.extract(
+            recipe, ingredient_warnings = self.fallback.extract(
                 html=html,
                 source_url=source_url,
             )
@@ -406,19 +406,23 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                 raw_input_reference=source_url,
             )
 
+        fallback_warning = ImportWarning(
+            code="json_ld_fallback_used",
+            message=(
+                "No usable Recipe JSON-LD was found; recipe-scrapers was used instead."
+            ),
+        )
+        all_warnings = [
+            fallback_warning,
+            *ingredient_warnings,
+        ]
+        status = ImportStatus.PARTIAL if ingredient_warnings else ImportStatus.SUCCESS
+
         return ImportResult(
             import_id=import_id,
-            status=ImportStatus.SUCCESS,
+            status=status,
             recipe=recipe,
-            warnings=[
-                ImportWarning(
-                    code="json_ld_fallback_used",
-                    message=(
-                        "No usable Recipe JSON-LD was found; "
-                        "recipe-scrapers was used instead."
-                    ),
-                )
-            ],
+            warnings=all_warnings,
             extractor=recipe.extractor,
             raw_input_reference=source_url,
         )

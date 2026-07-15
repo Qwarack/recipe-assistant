@@ -2,7 +2,7 @@ from decimal import Decimal
 from pathlib import Path
 
 from app.importers.website import WebsiteRecipeImporter
-from app.models.import_result import ImportStatus
+from app.models.import_result import ImportStatus, ImportWarning
 from app.models.recipe import Ingredient, Recipe, SourceType
 from app.services.import_debug_storage import ImportDebugStorage
 
@@ -20,18 +20,48 @@ class FakeFallback:
         self,
         html: str,
         source_url: str,
-    ) -> Recipe:
-        return Recipe(
-            title="Fallback Recipe",
+    ) -> tuple[Recipe, list[ImportWarning]]:
+        return (
+            Recipe(
+                title="Fallback Recipe",
+                source_type=SourceType.WEBSITE,
+                source_url=source_url,
+                ingredients=[
+                    Ingredient(name="pasta"),
+                ],
+                instructions=[
+                    "Cook the pasta.",
+                ],
+            ),
+            [],
+        )
+
+
+class WarningFallback:
+    def extract(
+        self,
+        html: str,
+        source_url: str,
+    ) -> tuple[Recipe, list[ImportWarning]]:
+        recipe = Recipe(
+            title="Fallback Soup",
             source_type=SourceType.WEBSITE,
             source_url=source_url,
             ingredients=[
-                Ingredient(name="pasta"),
+                Ingredient(name="zout"),
             ],
             instructions=[
-                "Cook the pasta.",
+                "Mix everything.",
             ],
         )
+        warnings = [
+            ImportWarning(
+                code="quantity_not_parsed",
+                message="Ingredient quantity could not be parsed",
+            )
+        ]
+
+        return recipe, warnings
 
 
 def test_website_importer_extracts_recipe_json_ld() -> None:
@@ -637,6 +667,22 @@ def test_website_importer_uses_fallback_without_json_ld() -> None:
     assert result.recipe is not None
     assert result.recipe.title == "Fallback Recipe"
     assert result.warnings[0].code == "json_ld_fallback_used"
+
+
+def test_website_fallback_propagates_ingredient_warnings() -> None:
+    importer = WebsiteRecipeImporter(
+        FakeHttpClient("<html></html>"),
+        fallback=WarningFallback(),
+    )
+
+    result = importer.import_recipe("https://example.com/soup")
+
+    assert result.status is ImportStatus.PARTIAL
+    assert result.recipe is not None
+    assert [warning.code for warning in result.warnings] == [
+        "json_ld_fallback_used",
+        "quantity_not_parsed",
+    ]
 
 
 class FailingFallback:

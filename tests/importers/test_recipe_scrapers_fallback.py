@@ -36,6 +36,14 @@ class FakeScraper:
         ]
 
 
+class WarningScraper(FakeScraper):
+    def ingredients(self) -> list[str]:
+        return [
+            "1/0 tl zout",
+            "water",
+        ]
+
+
 def test_fallback_converts_scraper_output_to_recipe(
     monkeypatch,
 ) -> None:
@@ -47,7 +55,7 @@ def test_fallback_converts_scraper_output_to_recipe(
 
     fallback = RecipeScrapersFallback()
 
-    recipe = fallback.extract(
+    recipe, warnings = fallback.extract(
         html="<html></html>",
         source_url="https://example.com/pasta",
     )
@@ -57,3 +65,25 @@ def test_fallback_converts_scraper_output_to_recipe(
     assert recipe.extractor == "recipe-scrapers"
     assert len(recipe.ingredients) == 2
     assert len(recipe.instructions) == 2
+    assert warnings == []
+
+
+def test_fallback_returns_ingredient_warnings(
+    monkeypatch,
+) -> None:
+    monkeypatch.setattr(
+        recipe_scrapers_fallback,
+        "scrape_html",
+        lambda **kwargs: WarningScraper(),
+    )
+
+    fallback = RecipeScrapersFallback()
+
+    recipe, warnings = fallback.extract(
+        html="<html></html>",
+        source_url="https://example.com/soup",
+    )
+
+    assert recipe.ingredients
+    assert warnings
+    assert any(warning.code == "quantity_not_parsed" for warning in warnings)

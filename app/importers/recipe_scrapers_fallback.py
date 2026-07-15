@@ -1,7 +1,10 @@
 from recipe_scrapers import scrape_html
 
+from app.models.import_result import ImportWarning
 from app.models.recipe import Recipe, SourceType
-from app.services.ingredient_parser import parse_ingredient_line
+from app.services.ingredient_parser import (
+    parse_ingredient_line_with_warnings,
+)
 
 
 class RecipeScrapersFallback:
@@ -11,22 +14,32 @@ class RecipeScrapersFallback:
         self,
         html: str,
         source_url: str,
-    ) -> Recipe:
+    ) -> tuple[Recipe, list[ImportWarning]]:
         scraper = scrape_html(
             html=html,
             org_url=source_url,
         )
 
-        ingredients = [
-            parse_ingredient_line(raw_ingredient)
-            for raw_ingredient in scraper.ingredients()
-        ]
+        ingredients = []
+        warnings: list[ImportWarning] = []
+
+        for raw_ingredient in scraper.ingredients():
+            parse_result = parse_ingredient_line_with_warnings(raw_ingredient)
+
+            ingredients.append(parse_result.ingredient)
+            warnings.extend(
+                ImportWarning(
+                    code=warning.code,
+                    message=warning.message,
+                )
+                for warning in parse_result.warnings
+            )
 
         instructions = [
             line.strip() for line in scraper.instructions_list() if line.strip()
         ]
 
-        return Recipe(
+        recipe = Recipe(
             title=scraper.title(),
             source_type=SourceType.WEBSITE,
             source_url=source_url,
@@ -39,6 +52,8 @@ class RecipeScrapersFallback:
             ingredients=ingredients,
             instructions=instructions,
         )
+
+        return recipe, warnings
 
     @staticmethod
     def _parse_servings(value: str | None) -> int | None:
