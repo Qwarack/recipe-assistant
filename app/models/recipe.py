@@ -5,6 +5,11 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
+from app.utils.recipe_metadata import (
+    normalize_meal_types,
+    normalize_tags,
+)
+
 
 class SourceType(StrEnum):
     WEBSITE = "website"
@@ -68,6 +73,7 @@ class Recipe(BaseModel):
     ingredients: list[Ingredient] = Field(min_length=1)
     instructions: list[str] = Field(min_length=1)
     tags: list[str] = Field(default_factory=list)
+    meal_types: list[str] = Field(default_factory=list)
 
     @field_validator("title")
     @classmethod
@@ -89,10 +95,41 @@ class Recipe(BaseModel):
 
         return normalized
 
-    @field_validator("tags")
+    @field_validator("tags", mode="before")
     @classmethod
-    def normalize_tags(cls, values: list[str]) -> list[str]:
-        return sorted({value.strip().lower() for value in values if value.strip()})
+    def normalize_recipe_tags(
+        cls,
+        value: object,
+    ) -> list[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            return normalize_tags([value])
+
+        if isinstance(value, list):
+            string_values = [item for item in value if isinstance(item, str)]
+            return normalize_tags(string_values)
+
+        raise ValueError("Tags must be a string or list of strings.")
+
+    @field_validator("meal_types", mode="before")
+    @classmethod
+    def normalize_recipe_meal_types(
+        cls,
+        value: object,
+    ) -> list[str]:
+        if value is None:
+            return []
+
+        if isinstance(value, str):
+            return normalize_meal_types([value])
+
+        if isinstance(value, list):
+            string_values = [item for item in value if isinstance(item, str)]
+            return normalize_meal_types(string_values)
+
+        raise ValueError("Meal types must be a string or list of strings.")
 
     @model_validator(mode="after")
     def validate_source(self) -> "Recipe":

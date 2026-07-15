@@ -13,6 +13,8 @@ servings: 4
 prep_time_minutes: null
 cook_time_minutes: null
 total_time_minutes: null
+meal_types:
+- dinner
 tags:
 - pasta
 - quick

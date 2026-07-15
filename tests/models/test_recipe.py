@@ -258,3 +258,33 @@ def test_recipe_generates_unique_id() -> None:
     assert isinstance(first.id, UUID)
     assert isinstance(second.id, UUID)
     assert first.id != second.id
+
+
+def test_recipe_normalizes_tags_and_meal_types() -> None:
+    recipe = Recipe(
+        title="Pasta",
+        source_type=SourceType.MANUAL,
+        ingredients=[
+            Ingredient(name="pasta"),
+        ],
+        instructions=[
+            "Cook the pasta.",
+        ],
+        tags=[
+            " Quick ",
+            "quick",
+            "PASTA",
+        ],
+        meal_types=[
+            "Avondeten",
+            "Dinner",
+        ],
+    )
+
+    assert recipe.tags == [
+        "pasta",
+        "quick",
+    ]
+    assert recipe.meal_types == [
+        "dinner",
+    ]

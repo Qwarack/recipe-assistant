@@ -56,5 +56,6 @@ class RecipeMarkdownRenderer:
             "prep_time_minutes": recipe.prep_time_minutes,
             "cook_time_minutes": recipe.cook_time_minutes,
             "total_time_minutes": recipe.total_time_minutes,
+            "meal_types": recipe.meal_types,
             "tags": recipe.tags,
         }

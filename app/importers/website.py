@@ -26,6 +26,9 @@ from app.services.ingredient_parser import (
     parse_ingredient_line_with_warnings,
 )
 from app.services.servings_parser import parse_servings
+from app.utils.recipe_metadata import (
+    normalize_meal_types,
+)
 
 
 class WebsiteRecipeImporter(RecipeImporter[str]):
@@ -186,6 +189,9 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             ingredients=ingredients,
             instructions=instructions,
             tags=self._parse_tags(recipe_data),
+            meal_types=normalize_meal_types(
+                self._normalize_string_list(recipe_data.get("recipeCategory"))
+            ),
         )
 
         return recipe, warnings

@@ -51,6 +51,7 @@ def make_snapshot_recipe() -> Recipe:
             "Cook the pasta.",
             "Mix everything.",
         ],
+        meal_types=["dinner"],
         tags=["pasta", "quick"],
     )
 
@@ -82,6 +83,7 @@ def test_renderer_creates_recipe_markdown() -> None:
             "Mix everything.",
         ],
         tags=["pasta", "quick"],
+        meal_types=["dinner"],
     )
 
     markdown = RecipeMarkdownRenderer().render(recipe)
