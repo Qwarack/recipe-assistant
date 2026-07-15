@@ -25,6 +25,14 @@ class FakeImportService:
         return self.result, self.destination
 
 
+class FakePreviewService:
+    def __init__(self, result: ImportResult) -> None:
+        self.result = result
+
+    def preview(self, source: str) -> ImportResult:
+        return self.result
+
+
 def test_website_import_endpoint_returns_created_file(
     tmp_path: Path,
 ) -> None:
@@ -67,6 +75,16 @@ def test_website_import_endpoint_returns_created_file(
     assert body["status"] == "success"
     assert body["destination"] == str(destination)
     assert body["warnings"] == []
+    assert body["recipe"] == {
+        "title": "Pasta",
+        "servings": None,
+        "prep_time_minutes": None,
+        "cook_time_minutes": None,
+        "total_time_minutes": None,
+        "ingredient_count": 1,
+        "instruction_count": 1,
+        "source_url": "https://example.com/pasta",
+    }
 
 
 def test_website_import_endpoint_returns_422_for_failed_import() -> None:
@@ -91,3 +109,42 @@ def test_website_import_endpoint_returns_422_for_failed_import() -> None:
 
     assert response.status_code == 422
     assert response.json()["detail"]["import_id"] == str(result.import_id)
+
+
+def test_website_preview_returns_recipe_without_destination() -> None:
+    result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=Recipe(
+            title="Pasta",
+            source_type=SourceType.WEBSITE,
+            source_url="https://example.com/pasta",
+            ingredients=[
+                Ingredient(name="pasta"),
+            ],
+            instructions=[
+                "Cook the pasta.",
+            ],
+        ),
+    )
+
+    app.dependency_overrides[imports_api.create_preview_service] = lambda: (
+        FakePreviewService(result)
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/imports/website/preview",
+                json={
+                    "url": "https://example.com/pasta",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+
+    body = response.json()
+
+    assert body["destination"] is None
+    assert body["recipe"]["title"] == "Pasta"
