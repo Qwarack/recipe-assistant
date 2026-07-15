@@ -11,6 +11,7 @@ class Settings(BaseSettings):
     log_level: str = "INFO"
     recipes_path: Path = Path("data/recipes")
     database_path: Path = Path("data/database/recipes.db")
+    imports_path: Path = Path("/data/imports")
 
     model_config = SettingsConfigDict(
         env_file=".env",

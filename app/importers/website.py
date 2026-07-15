@@ -2,6 +2,7 @@ import json
 from collections.abc import Iterable
 from datetime import UTC, datetime, timedelta
 from typing import Any
+from uuid import UUID, uuid4
 
 import isodate
 from bs4 import BeautifulSoup
@@ -18,6 +19,9 @@ from app.models.import_result import (
     ImportWarning,
 )
 from app.models.recipe import Ingredient, Recipe, SourceType
+from app.services.import_debug_storage import (
+    ImportDebugStorage,
+)
 from app.services.ingredient_parser import (
     parse_ingredient_line_with_warnings,
 )
@@ -31,15 +35,20 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         self,
         http_client: SafeHttpClient,
         fallback: RecipeScrapersFallback | None = None,
+        debug_storage: ImportDebugStorage | None = None,
     ) -> None:
         self.http_client = http_client
         self.fallback = fallback or RecipeScrapersFallback()
+        self.debug_storage = debug_storage
 
     def import_recipe(self, source: str) -> ImportResult:
+        import_id = uuid4()
+
         try:
             html = self.http_client.get_text(source)
         except HttpFetchError as exc:
             return ImportResult(
+                import_id=import_id,
                 status=ImportStatus.FAILED,
                 extractor=self.extractor_name,
                 warnings=[
@@ -59,6 +68,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             return self._import_with_fallback(
                 html=html,
                 source_url=source_url,
+                import_id=import_id,
             )
 
         try:
@@ -68,6 +78,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             )
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             return ImportResult(
+                import_id=import_id,
                 status=ImportStatus.FAILED,
                 extractor=self.extractor_name,
                 warnings=[
@@ -82,6 +93,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
 
         return ImportResult(
+            import_id=import_id,
             status=status,
             recipe=recipe,
             extractor=self.extractor_name,
@@ -353,6 +365,7 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         self,
         html: str,
         source_url: str,
+        import_id: UUID,
     ) -> ImportResult:
         try:
             recipe = self.fallback.extract(
@@ -360,21 +373,40 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
                 source_url=source_url,
             )
         except Exception as exc:
-            return ImportResult(
-                status=ImportStatus.FAILED,
-                warnings=[
+            warnings = [
+                ImportWarning(
+                    code="recipe_extraction_failed",
+                    message=(
+                        "Recipe extraction failed with both "
+                        f"JSON-LD and recipe-scrapers: {exc}"
+                    ),
+                )
+            ]
+
+            if self.debug_storage is not None:
+                debug_path = self.debug_storage.save_html(
+                    html=html,
+                    import_id=import_id,
+                )
+
+                warnings.append(
                     ImportWarning(
-                        code="recipe_extraction_failed",
+                        code="raw_html_saved",
                         message=(
-                            "Recipe extraction failed with both "
-                            f"JSON-LD and recipe-scrapers: {exc}"
+                            f"The raw HTML was saved for debugging at {debug_path}."
                         ),
                     )
-                ],
+                )
+
+            return ImportResult(
+                import_id=import_id,
+                status=ImportStatus.FAILED,
+                warnings=warnings,
                 raw_input_reference=source_url,
             )
 
         return ImportResult(
+            import_id=import_id,
             status=ImportStatus.SUCCESS,
             recipe=recipe,
             warnings=[

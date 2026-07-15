@@ -11,6 +11,7 @@ from app.core.config import get_settings
 from app.core.http_client import SafeHttpClient
 from app.importers.website import WebsiteRecipeImporter
 from app.models.import_result import ImportStatus
+from app.services.import_debug_storage import ImportDebugStorage
 from app.services.markdown_renderer import RecipeMarkdownRenderer
 from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
 from app.services.recipe_import_service import RecipeImportService
@@ -35,12 +36,16 @@ def create_import_service(
 ) -> RecipeImportService:
     settings = get_settings()
 
-    importer = WebsiteRecipeImporter(http_client)
+    importer = WebsiteRecipeImporter(
+        http_client,
+        debug_storage=ImportDebugStorage(settings.imports_path),
+    )
     renderer = RecipeMarkdownRenderer()
     storage = RecipeStorage(
         recipes_path=settings.recipes_path,
         renderer=renderer,
     )
+
     duplicate_detector = RecipeDuplicateDetector(recipes_path=settings.recipes_path)
 
     return RecipeImportService(

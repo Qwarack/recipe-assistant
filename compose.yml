@@ -10,4 +10,5 @@ services:
     volumes:
       - ./data/recipes:/data/recipes
       - ./data/database:/data/database
+      - ./data/imports:/data/imports
     restart: unless-stopped

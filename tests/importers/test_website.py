@@ -1,8 +1,10 @@
 from decimal import Decimal
+from pathlib import Path
 
 from app.importers.website import WebsiteRecipeImporter
 from app.models.import_result import ImportStatus
 from app.models.recipe import Ingredient, Recipe, SourceType
+from app.services.import_debug_storage import ImportDebugStorage
 
 
 class FakeHttpClient:
@@ -660,3 +662,21 @@ def test_website_importer_fails_when_all_extractors_fail() -> None:
     assert result.status is ImportStatus.FAILED
     assert result.recipe is None
     assert result.warnings[0].code == "recipe_extraction_failed"
+
+
+def test_website_importer_saves_html_when_all_extractors_fail(
+    tmp_path: Path,
+) -> None:
+    html = "<html><body>No recipe data</body></html>"
+
+    importer = WebsiteRecipeImporter(
+        FakeHttpClient(html),
+        fallback=FailingFallback(),
+        debug_storage=ImportDebugStorage(tmp_path),
+    )
+
+    result = importer.import_recipe("https://example.com/not-a-recipe")
+
+    assert result.status is ImportStatus.FAILED
+    assert any(warning.code == "raw_html_saved" for warning in result.warnings)
+    assert len(list(tmp_path.glob("*.html"))) == 1
