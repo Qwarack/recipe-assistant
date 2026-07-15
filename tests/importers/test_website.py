@@ -2,7 +2,7 @@ from decimal import Decimal
 
 from app.importers.website import WebsiteRecipeImporter
 from app.models.import_result import ImportStatus
-from app.models.recipe import SourceType
+from app.models.recipe import Ingredient, Recipe, SourceType
 
 
 class FakeHttpClient:
@@ -11,6 +11,25 @@ class FakeHttpClient:
 
     def get_text(self, url: str) -> str:
         return self.html
+
+
+class FakeFallback:
+    def extract(
+        self,
+        html: str,
+        source_url: str,
+    ) -> Recipe:
+        return Recipe(
+            title="Fallback Recipe",
+            source_type=SourceType.WEBSITE,
+            source_url=source_url,
+            ingredients=[
+                Ingredient(name="pasta"),
+            ],
+            instructions=[
+                "Cook the pasta.",
+            ],
+        )
 
 
 def test_website_importer_extracts_recipe_json_ld() -> None:
@@ -105,7 +124,7 @@ def test_website_importer_returns_failure_when_recipe_is_missing() -> None:
 
     assert result.status is ImportStatus.FAILED
     assert result.recipe is None
-    assert result.warnings[0].code == "recipe_json_ld_not_found"
+    assert result.warnings[0].code == "recipe_extraction_failed"
 
 
 def test_website_importer_ignores_invalid_json_ld() -> None:
@@ -120,7 +139,7 @@ def test_website_importer_ignores_invalid_json_ld() -> None:
     result = importer.import_recipe("https://example.com/page")
 
     assert result.status is ImportStatus.FAILED
-    assert result.warnings[0].code == "recipe_json_ld_not_found"
+    assert result.warnings[0].code == "recipe_extraction_failed"
 
 
 def test_website_importer_supports_recipe_type_list() -> None:
@@ -601,3 +620,43 @@ def test_website_import_sets_imported_at() -> None:
     assert result.recipe is not None
     assert result.recipe.imported_at is not None
     assert result.recipe.imported_at.tzinfo is not None
+
+
+def test_website_importer_uses_fallback_without_json_ld() -> None:
+    html = "<html><body>No JSON-LD here</body></html>"
+
+    importer = WebsiteRecipeImporter(
+        FakeHttpClient(html),
+        fallback=FakeFallback(),
+    )
+
+    result = importer.import_recipe("https://example.com/pasta")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.recipe.title == "Fallback Recipe"
+    assert result.warnings[0].code == "json_ld_fallback_used"
+
+
+class FailingFallback:
+    def extract(
+        self,
+        html: str,
+        source_url: str,
+    ) -> Recipe:
+        raise ValueError("No recipe found")
+
+
+def test_website_importer_fails_when_all_extractors_fail() -> None:
+    html = "<html><body>No recipe data</body></html>"
+
+    importer = WebsiteRecipeImporter(
+        FakeHttpClient(html),
+        fallback=FailingFallback(),
+    )
+
+    result = importer.import_recipe("https://example.com/not-a-recipe")
+
+    assert result.status is ImportStatus.FAILED
+    assert result.recipe is None
+    assert result.warnings[0].code == "recipe_extraction_failed"

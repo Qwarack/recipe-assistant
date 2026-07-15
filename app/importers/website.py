@@ -9,6 +9,9 @@ from pydantic import ValidationError
 
 from app.core.http_client import HttpFetchError, SafeHttpClient
 from app.importers.base import RecipeImporter
+from app.importers.recipe_scrapers_fallback import (
+    RecipeScrapersFallback,
+)
 from app.models.import_result import (
     ImportResult,
     ImportStatus,
@@ -24,8 +27,13 @@ from app.services.servings_parser import parse_servings
 class WebsiteRecipeImporter(RecipeImporter[str]):
     extractor_name = "schema_org"
 
-    def __init__(self, http_client: SafeHttpClient) -> None:
+    def __init__(
+        self,
+        http_client: SafeHttpClient,
+        fallback: RecipeScrapersFallback | None = None,
+    ) -> None:
         self.http_client = http_client
+        self.fallback = fallback or RecipeScrapersFallback()
 
     def import_recipe(self, source: str) -> ImportResult:
         try:
@@ -45,24 +53,18 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             )
 
         recipe_data = self._find_recipe_json_ld(html)
+        source_url = source
 
         if recipe_data is None:
-            return ImportResult(
-                status=ImportStatus.FAILED,
-                extractor=self.extractor_name,
-                warnings=[
-                    ImportWarning(
-                        code="recipe_json_ld_not_found",
-                        message="No schema.org Recipe JSON-LD was found",
-                    )
-                ],
-                raw_input_reference=source,
+            return self._import_with_fallback(
+                html=html,
+                source_url=source_url,
             )
 
         try:
             recipe, warnings = self._convert_recipe_data(
                 recipe_data=recipe_data,
-                source_url=source,
+                source_url=source_url,
             )
         except (KeyError, TypeError, ValueError, ValidationError) as exc:
             return ImportResult(
@@ -346,3 +348,44 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
             tags.update(self._normalize_string_list(recipe_data.get(field_name)))
 
         return sorted(tags)
+
+    def _import_with_fallback(
+        self,
+        html: str,
+        source_url: str,
+    ) -> ImportResult:
+        try:
+            recipe = self.fallback.extract(
+                html=html,
+                source_url=source_url,
+            )
+        except Exception as exc:
+            return ImportResult(
+                status=ImportStatus.FAILED,
+                warnings=[
+                    ImportWarning(
+                        code="recipe_extraction_failed",
+                        message=(
+                            "Recipe extraction failed with both "
+                            f"JSON-LD and recipe-scrapers: {exc}"
+                        ),
+                    )
+                ],
+                raw_input_reference=source_url,
+            )
+
+        return ImportResult(
+            status=ImportStatus.SUCCESS,
+            recipe=recipe,
+            warnings=[
+                ImportWarning(
+                    code="json_ld_fallback_used",
+                    message=(
+                        "No usable Recipe JSON-LD was found; "
+                        "recipe-scrapers was used instead."
+                    ),
+                )
+            ],
+            extractor=recipe.extractor,
+            raw_input_reference=source_url,
+        )
