@@ -200,7 +200,6 @@ def test_website_importer_supports_how_to_sections() -> None:
 
     assert result.recipe is not None
     assert result.recipe.instructions == [
-        "Preparation",
         "Chop the tomatoes.",
         "Cook for ten minutes.",
     ]
@@ -680,3 +679,83 @@ def test_website_importer_saves_html_when_all_extractors_fail(
     assert result.status is ImportStatus.FAILED
     assert any(warning.code == "raw_html_saved" for warning in result.warnings)
     assert len(list(tmp_path.glob("*.html"))) == 1
+
+
+def test_imports_basic_recipe_fixture(
+    load_fixture,
+) -> None:
+    html = load_fixture("websites/basic_recipe.html")
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/carbonara")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.recipe.title == "Pasta Carbonara"
+    assert result.recipe.servings == 4
+    assert len(result.recipe.ingredients) == 2
+    assert len(result.recipe.instructions) == 2
+
+
+def test_imports_recipe_from_graph_fixture(
+    load_fixture,
+) -> None:
+    html = load_fixture("websites/recipe_with_graph.html")
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/tomato-soup")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.recipe.title == "Tomato Soup"
+    assert result.recipe.servings == 2
+
+
+def test_imports_nested_instruction_fixture(
+    load_fixture,
+) -> None:
+    html = load_fixture("websites/nested_instructions.html")
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/bread")
+
+    assert result.recipe is not None
+    assert result.recipe.instructions == [
+        "Mix flour and water.",
+        "Knead the dough.",
+        "Bake for 30 minutes.",
+    ]
+
+
+def test_imports_fixture_without_optional_fields(
+    load_fixture,
+) -> None:
+    html = load_fixture("websites/missing_optional_fields.html")
+
+    importer = WebsiteRecipeImporter(FakeHttpClient(html))
+
+    result = importer.import_recipe("https://example.com/simple-salad")
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+    assert result.recipe.servings is None
+    assert result.recipe.total_time_minutes is None
+
+
+def test_invalid_fixture_fails_cleanly(
+    load_fixture,
+) -> None:
+    html = load_fixture("websites/invalid_recipe.html")
+
+    importer = WebsiteRecipeImporter(
+        FakeHttpClient(html),
+        fallback=FailingFallback(),
+    )
+
+    result = importer.import_recipe("https://example.com/not-a-recipe")
+
+    assert result.status is ImportStatus.FAILED
+    assert result.recipe is None

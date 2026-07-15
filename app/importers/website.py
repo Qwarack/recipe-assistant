@@ -210,11 +210,6 @@ class WebsiteRecipeImporter(RecipeImporter[str]):
         instruction_type = value.get("@type")
 
         if instruction_type == "HowToSection":
-            section_name = value.get("name")
-
-            if isinstance(section_name, str) and section_name.strip():
-                yield section_name
-
             yield from self._walk_instructions(value.get("itemListElement", []))
             return
 
