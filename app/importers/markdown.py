@@ -9,6 +9,7 @@ from app.models.import_result import (
     ImportWarning,
 )
 from app.models.recipe import Ingredient, Recipe, SourceType
+from app.services.ingredient_parser import parse_ingredient_line_with_warnings
 
 
 class MarkdownRecipeImporter:
@@ -45,7 +46,7 @@ class MarkdownRecipeImporter:
             )
 
         try:
-            recipe = self._build_recipe(
+            recipe, warnings = self._build_recipe(
                 frontmatter=frontmatter,
                 body=body,
                 source=source,
@@ -57,9 +58,12 @@ class MarkdownRecipeImporter:
                 message=f"Could not create a recipe: {exc}",
             )
 
+        status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
+
         return ImportResult(
-            status=ImportStatus.SUCCESS,
+            status=status,
             recipe=recipe,
+            warnings=warnings,
             extractor=self.extractor_name,
             raw_input_reference=str(source),
         )
@@ -118,16 +122,16 @@ class MarkdownRecipeImporter:
         frontmatter: dict[str, Any],
         body: str,
         source: Path,
-    ) -> Recipe:
+    ) -> tuple[Recipe, list[ImportWarning]]:
         title = frontmatter.get("title")
 
         if not isinstance(title, str) or not title.strip():
             raise ValueError("Markdown frontmatter must contain a title.")
 
-        ingredients = self._parse_ingredients(body)
+        ingredients, warnings = self._parse_ingredients(body)
         instructions = self._parse_instructions(body)
 
-        return Recipe(
+        recipe = Recipe(
             title=title.strip(),
             source_type=SourceType.MARKDOWN,
             source_url=frontmatter.get("source_url"),
@@ -138,35 +142,48 @@ class MarkdownRecipeImporter:
             cook_time_minutes=frontmatter.get("cook_time_minutes"),
             total_time_minutes=frontmatter.get("total_time_minutes"),
             tags=frontmatter.get("tags", []),
+            meal_types=frontmatter.get("meal_types", []),
             ingredients=ingredients,
             instructions=instructions,
         )
 
+        return recipe, warnings
+
     @staticmethod
     def _parse_ingredients(
         body: str,
-    ) -> list[Ingredient]:
+    ) -> tuple[list[Ingredient], list[ImportWarning]]:
         lines = MarkdownRecipeImporter._section_lines(
             body=body,
             heading="## Ingrediënten",
         )
 
         ingredients: list[Ingredient] = []
+        warnings: list[ImportWarning] = []
 
         for line in lines:
-            if not line.startswith("- "):
+            stripped = line.strip()
+
+            if not stripped.startswith("- "):
                 continue
 
-            raw_text = line.removeprefix("- ").strip()
+            raw_text = stripped.removeprefix("- ").strip()
 
-            if raw_text:
-                ingredients.append(
-                    Ingredient(
-                        name=raw_text,
-                    )
+            if not raw_text:
+                continue
+
+            parse_result = parse_ingredient_line_with_warnings(raw_text)
+
+            ingredients.append(parse_result.ingredient)
+            warnings.extend(
+                ImportWarning(
+                    code=warning.code,
+                    message=warning.message,
                 )
+                for warning in parse_result.warnings
+            )
 
-        return ingredients
+        return ingredients, warnings
 
     @staticmethod
     def _parse_instructions(

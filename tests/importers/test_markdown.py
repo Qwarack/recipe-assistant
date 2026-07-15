@@ -51,6 +51,18 @@ tags:
         "Mix with the eggs.",
     ]
     assert result.raw_input_reference == str(markdown_path)
+    first_ingredient = result.recipe.ingredients[0]
+
+    assert first_ingredient.quantity is not None
+    assert str(first_ingredient.quantity) == "400"
+    assert first_ingredient.unit == "g"
+    assert first_ingredient.name == "spaghetti"
+
+    second_ingredient = result.recipe.ingredients[1]
+
+    assert str(second_ingredient.quantity) == "2"
+    assert second_ingredient.unit is None
+    assert second_ingredient.name == "eieren"
 
 
 def test_fails_when_markdown_has_no_frontmatter(
@@ -115,3 +127,66 @@ def test_rejects_non_markdown_file(
 
     assert result.status is ImportStatus.FAILED
     assert result.warnings[0].code == ("unsupported_markdown_file_type")
+
+
+def test_markdown_import_preserves_ingredient_without_quantity(
+    tmp_path: Path,
+) -> None:
+    markdown_path = tmp_path / "salad.md"
+    markdown_path.write_text(
+        """---
+title: Simple Salad
+---
+
+## Ingrediënten
+
+- peper naar smaak
+- sla
+
+## Bereiding
+
+1. Meng alles.
+""",
+        encoding="utf-8",
+    )
+
+    importer = MarkdownRecipeImporter()
+
+    result = importer.import_recipe(markdown_path)
+
+    assert result.status is ImportStatus.SUCCESS
+    assert result.recipe is not None
+
+    first_ingredient = result.recipe.ingredients[0]
+
+    assert first_ingredient.quantity is None
+
+
+def test_markdown_import_propagates_ingredient_warnings(
+    tmp_path: Path,
+) -> None:
+    markdown_path = tmp_path / "soup.md"
+    markdown_path.write_text(
+        """---
+title: Soup
+---
+
+## Ingrediënten
+
+- 1/0 tl zout
+- water
+
+## Bereiding
+
+1. Meng alles.
+""",
+        encoding="utf-8",
+    )
+
+    importer = MarkdownRecipeImporter()
+
+    result = importer.import_recipe(markdown_path)
+
+    assert result.status is ImportStatus.PARTIAL
+    assert result.recipe is not None
+    assert any(warning.code == "quantity_not_parsed" for warning in result.warnings)
