@@ -6,7 +6,9 @@ from app.models.import_result import (
     ImportWarning,
 )
 from app.models.recipe import Recipe, SourceType
-from app.services.ingredient_parser import parse_ingredient_line
+from app.services.ingredient_parser import (
+    parse_ingredient_line_with_warnings,
+)
 
 INGREDIENT_HEADINGS = {
     "ingrediënten",
@@ -57,7 +59,22 @@ class ManualTextRecipeImporter:
                 source=source,
             )
 
-        ingredients = [parse_ingredient_line(line) for line in ingredient_lines]
+        ingredients = []
+        warnings: list[ImportWarning] = []
+
+        for line in ingredient_lines:
+            raw_text = line.strip().removeprefix("- ").strip()
+            parse_result = parse_ingredient_line_with_warnings(raw_text)
+
+            ingredients.append(parse_result.ingredient)
+
+            warnings.extend(
+                ImportWarning(
+                    code=warning.code,
+                    message=warning.message,
+                )
+                for warning in parse_result.warnings
+            )
 
         instructions = [
             instruction
@@ -80,9 +97,12 @@ class ManualTextRecipeImporter:
                 source=source,
             )
 
+        status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
+
         return ImportResult(
-            status=ImportStatus.SUCCESS,
+            status=status,
             recipe=recipe,
+            warnings=warnings,
             extractor=self.extractor_name,
             raw_input_reference=source,
         )

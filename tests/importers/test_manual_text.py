@@ -104,3 +104,25 @@ Dit is alleen een losse tekst zonder recept.
     assert result.status is ImportStatus.FAILED
     assert result.recipe is None
     assert result.warnings[0].code == ("manual_text_recipe_invalid")
+
+
+def test_manual_text_import_propagates_ingredient_warnings() -> None:
+    source = """
+Soup
+
+Ingrediënten:
+- 1/0 tl zout
+- water
+
+Bereiding:
+1. Meng alles.
+"""
+
+    importer = ManualTextRecipeImporter()
+
+    result = importer.import_recipe(source)
+
+    assert result.status is ImportStatus.PARTIAL
+    assert result.recipe is not None
+    assert result.warnings
+    assert any(warning.code == "quantity_not_parsed" for warning in result.warnings)
