@@ -6,6 +6,7 @@ readme = "README.md"
 requires-python = ">=3.12"
 dependencies = [
     "beautifulsoup4>=4.15.0",
+    "discord-py>=2.7.1",
     "fastapi>=0.139.0",
     "httpx>=0.28.1",
     "isodate>=0.7.2",
@@ -57,4 +58,7 @@ addopts = [
     "-ra",
     "--strict-markers",
     "--strict-config",
+]
+filterwarnings = [
+    "ignore:'audioop' is deprecated and slated for removal in Python 3.13:DeprecationWarning:discord.player",
 ]

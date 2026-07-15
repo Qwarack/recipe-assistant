@@ -19,6 +19,10 @@ class Settings(BaseSettings):
         extra="ignore",
     )
 
+    discord_bot_token: str | None = None
+    discord_guild_id: int | None = None
+    discord_allowed_channel_id: int | None = None
+
 
 @lru_cache
 def get_settings() -> Settings:
