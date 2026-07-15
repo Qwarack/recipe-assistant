@@ -52,6 +52,13 @@ def _parse_import_response(
     )
 
 
+@dataclass(slots=True)
+class RecipeSearchResult:
+    title: str
+    path: str
+    source_url: str | None
+
+
 class RecipeApiClient:
     def __init__(
         self,
@@ -108,3 +115,78 @@ class RecipeApiClient:
         response.raise_for_status()
 
         return _parse_import_response(response.json())
+
+    async def preview_manual_recipe(
+        self,
+        text: str,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/manual/preview"
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={
+                    "text": text,
+                },
+            )
+
+        response.raise_for_status()
+
+        return _parse_import_response(response.json())
+
+    async def import_manual_recipe(
+        self,
+        text: str,
+        *,
+        force: bool = False,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/manual"
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={
+                    "text": text,
+                    "force": force,
+                },
+            )
+
+        response.raise_for_status()
+
+        return _parse_import_response(response.json())
+
+    async def search_recipes(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+    ) -> list[RecipeSearchResult]:
+        endpoint = f"{self.base_url}/recipes/search"
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(
+                endpoint,
+                params={
+                    "query": query,
+                    "limit": limit,
+                },
+            )
+
+        response.raise_for_status()
+
+        payload = response.json()
+
+        return [
+            RecipeSearchResult(
+                title=item["title"],
+                path=item["path"],
+                source_url=item.get("source_url"),
+            )
+            for item in payload
+        ]

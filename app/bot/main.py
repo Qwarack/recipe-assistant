@@ -5,8 +5,9 @@ import httpx
 from discord import app_commands
 from discord.ext import commands
 
-from app.bot.api_client import RecipeApiClient
+from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.embeds import build_recipe_import_embed
+from app.bot.modals import ManualRecipeModal
 from app.bot.views import RecipeImportView
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -81,9 +82,17 @@ def create_bot() -> commands.Bot:
 
         embed = build_recipe_import_embed(result)
 
+        async def save_website(
+            force: bool,
+        ) -> RecipeImportResponse:
+            return await api_client.import_website_recipe(
+                url,
+                force=force,
+            )
+
         view = RecipeImportView(
             api_client=api_client,
-            source_url=url,
+            import_action=save_website,
             owner_id=interaction.user.id,
         )
 
@@ -95,6 +104,33 @@ def create_bot() -> commands.Bot:
         )
 
         view.message = message
+
+    @recipe_group.command(
+        name="tekst",
+        description="Importeer een handmatig geplakt recept",
+    )
+    async def import_recipe_text(
+        interaction: discord.Interaction,
+    ) -> None:
+        if (
+            settings.discord_allowed_channel_id is not None
+            and interaction.channel_id != settings.discord_allowed_channel_id
+        ):
+            await interaction.response.send_message(
+                (
+                    "Dit commando mag alleen in het ingestelde "
+                    "receptenkanaal worden gebruikt."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        modal = ManualRecipeModal(
+            api_client=api_client,
+            owner_id=interaction.user.id,
+        )
+
+        await interaction.response.send_modal(modal)
 
     bot.tree.add_command(recipe_group)
 

@@ -6,10 +6,14 @@ from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.views import DuplicateRecipeView, RecipeImportView
 
 
+async def unexpected_import(force: bool) -> RecipeImportResponse:
+    raise AssertionError("Import action should not be called")
+
+
 def test_recipe_import_view_contains_save_and_cancel_buttons() -> None:
     view = RecipeImportView(
         api_client=RecipeApiClient(base_url="http://example.test"),
-        source_url="https://example.com/pasta",
+        import_action=unexpected_import,
         owner_id=123,
     )
 
@@ -24,7 +28,7 @@ def test_recipe_import_view_contains_save_and_cancel_buttons() -> None:
 def test_disable_all_buttons() -> None:
     view = RecipeImportView(
         api_client=RecipeApiClient(base_url="http://example.test"),
-        source_url="https://example.com/pasta",
+        import_action=unexpected_import,
         owner_id=123,
     )
 
@@ -39,7 +43,7 @@ def test_disable_all_buttons() -> None:
 
 def test_save_button_edits_ephemeral_interaction_response() -> None:
     api_client = RecipeApiClient(base_url="http://example.test")
-    api_client.import_website_recipe = AsyncMock(
+    import_action = AsyncMock(
         return_value=RecipeImportResponse(
             import_id="abc123",
             status="success",
@@ -50,7 +54,7 @@ def test_save_button_edits_ephemeral_interaction_response() -> None:
     )
     view = RecipeImportView(
         api_client=api_client,
-        source_url="https://example.com/pasta",
+        import_action=import_action,
         owner_id=123,
     )
     interaction = MagicMock()
@@ -62,6 +66,7 @@ def test_save_button_edits_ephemeral_interaction_response() -> None:
     asyncio.run(view.save_button.callback(interaction))
 
     interaction.response.defer.assert_awaited_once_with()
+    import_action.assert_awaited_once_with(False)
     interaction.edit_original_response.assert_awaited_once()
     interaction.message.edit.assert_not_awaited()
 
@@ -69,7 +74,7 @@ def test_save_button_edits_ephemeral_interaction_response() -> None:
 def test_duplicate_recipe_view_contains_force_save_and_cancel_buttons() -> None:
     view = DuplicateRecipeView(
         api_client=RecipeApiClient(base_url="http://example.test"),
-        source_url="https://example.com/pasta",
+        import_action=unexpected_import,
         owner_id=123,
     )
 
@@ -83,7 +88,7 @@ def test_duplicate_recipe_view_contains_force_save_and_cancel_buttons() -> None:
 
 def test_force_save_button_imports_with_force_enabled() -> None:
     api_client = RecipeApiClient(base_url="http://example.test")
-    api_client.import_website_recipe = AsyncMock(
+    import_action = AsyncMock(
         return_value=RecipeImportResponse(
             import_id="abc123",
             status="success",
@@ -94,7 +99,7 @@ def test_force_save_button_imports_with_force_enabled() -> None:
     )
     view = DuplicateRecipeView(
         api_client=api_client,
-        source_url="https://example.com/pasta",
+        import_action=import_action,
         owner_id=123,
     )
     interaction = MagicMock()
@@ -104,17 +109,14 @@ def test_force_save_button_imports_with_force_enabled() -> None:
 
     asyncio.run(view.force_save_button.callback(interaction))
 
-    api_client.import_website_recipe.assert_awaited_once_with(
-        "https://example.com/pasta",
-        force=True,
-    )
+    import_action.assert_awaited_once_with(True)
     interaction.response.defer.assert_awaited_once_with()
     interaction.edit_original_response.assert_awaited_once()
 
 
 def test_save_button_shows_duplicate_view_for_strong_duplicate() -> None:
     api_client = RecipeApiClient(base_url="http://example.test")
-    api_client.import_website_recipe = AsyncMock(
+    import_action = AsyncMock(
         return_value=RecipeImportResponse(
             import_id="abc123",
             status="partial",
@@ -130,7 +132,7 @@ def test_save_button_shows_duplicate_view_for_strong_duplicate() -> None:
     )
     view = RecipeImportView(
         api_client=api_client,
-        source_url="https://example.com/pasta",
+        import_action=import_action,
         owner_id=123,
     )
     interaction = MagicMock()
@@ -147,7 +149,7 @@ def test_save_button_shows_duplicate_view_for_strong_duplicate() -> None:
 
 def test_save_button_does_not_show_duplicate_view_for_title_warning() -> None:
     api_client = RecipeApiClient(base_url="http://example.test")
-    api_client.import_website_recipe = AsyncMock(
+    import_action = AsyncMock(
         return_value=RecipeImportResponse(
             import_id="abc123",
             status="partial",
@@ -163,7 +165,7 @@ def test_save_button_does_not_show_duplicate_view_for_title_warning() -> None:
     )
     view = RecipeImportView(
         api_client=api_client,
-        source_url="https://example.com/pasta",
+        import_action=import_action,
         owner_id=123,
     )
     interaction = MagicMock()

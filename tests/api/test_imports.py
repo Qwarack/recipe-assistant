@@ -15,6 +15,8 @@ class FakeImportService:
     ) -> None:
         self.result = result
         self.destination = destination
+        self.last_source: str | None = None
+        self.last_force = False
 
     def import_and_save(
         self,
@@ -22,6 +24,8 @@ class FakeImportService:
         *,
         force: bool = False,
     ) -> tuple[ImportResult, Path | None]:
+        self.last_source = source
+        self.last_force = force
         return self.result, self.destination
 
 
@@ -148,3 +152,68 @@ def test_website_preview_returns_recipe_without_destination() -> None:
 
     assert body["destination"] is None
     assert body["recipe"]["title"] == "Pasta"
+
+
+def test_manual_preview_returns_recipe_without_destination() -> None:
+    result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=Recipe(
+            title="Soup",
+            source_type=SourceType.MANUAL,
+            ingredients=[Ingredient(name="water")],
+            instructions=["Mix everything."],
+        ),
+    )
+
+    app.dependency_overrides[imports_api.create_manual_preview_service] = lambda: (
+        FakePreviewService(result)
+    )
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/imports/manual/preview",
+                json={
+                    "text": "Soup\n\nIngredients:\n- water\n\nInstructions:\n1. Mix.",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["destination"] is None
+    assert response.json()["recipe"]["title"] == "Soup"
+
+
+def test_manual_import_saves_recipe_and_passes_force(
+    tmp_path: Path,
+) -> None:
+    result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=Recipe(
+            title="Soup",
+            source_type=SourceType.MANUAL,
+            ingredients=[Ingredient(name="water")],
+            instructions=["Mix everything."],
+        ),
+    )
+    destination = tmp_path / "soup.md"
+    service = FakeImportService(result, destination)
+
+    app.dependency_overrides[imports_api.create_manual_import_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/imports/manual",
+                json={
+                    "text": "Soup\n\nIngredients:\n- water\n\nInstructions:\n1. Mix.",
+                    "force": True,
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 201
+    assert response.json()["destination"] == str(destination)
+    assert service.last_force is True

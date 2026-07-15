@@ -3,7 +3,7 @@ from pathlib import Path
 from uuid import UUID
 
 from app.models.import_result import ImportStatus, ImportWarning
-from pydantic import BaseModel, HttpUrl
+from pydantic import BaseModel, Field, HttpUrl
 
 
 class RecipePreview(BaseModel):
@@ -19,6 +19,11 @@ class RecipePreview(BaseModel):
 
 class WebsiteImportRequest(BaseModel):
     url: HttpUrl
+    force: bool = False
+
+
+class ManualImportRequest(BaseModel):
+    text: str = Field(min_length=1)
     force: bool = False
 
 

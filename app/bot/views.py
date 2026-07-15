@@ -1,9 +1,10 @@
 import logging
+from collections.abc import Awaitable, Callable
 
 import discord
 import httpx
 
-from app.bot.api_client import RecipeApiClient
+from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.embeds import build_recipe_import_embed
 
 logger = logging.getLogger(__name__)
@@ -13,20 +14,25 @@ STRONG_DUPLICATE_WARNING_CODES = {
     "duplicate_content",
 }
 
+ImportAction = Callable[
+    [bool],
+    Awaitable[RecipeImportResponse],
+]
+
 
 class RecipeImportView(discord.ui.View):
     def __init__(
         self,
         *,
         api_client: RecipeApiClient,
-        source_url: str,
+        import_action: ImportAction,
         owner_id: int,
         timeout: float = 300,
     ) -> None:
         super().__init__(timeout=timeout)
 
         self.api_client = api_client
-        self.source_url = source_url
+        self.import_action = import_action
         self.owner_id = owner_id
         self.message: discord.InteractionMessage | None = None
 
@@ -57,7 +63,7 @@ class RecipeImportView(discord.ui.View):
         self._disable_all_buttons()
 
         try:
-            result = await self.api_client.import_website_recipe(self.source_url)
+            result = await self.import_action(False)
         except httpx.HTTPStatusError as exc:
             await interaction.followup.send(
                 (
@@ -83,7 +89,7 @@ class RecipeImportView(discord.ui.View):
         if has_duplicate:
             duplicate_view = DuplicateRecipeView(
                 api_client=self.api_client,
-                source_url=self.source_url,
+                import_action=self.import_action,
                 owner_id=self.owner_id,
             )
             embed = build_recipe_import_embed(result)
@@ -156,14 +162,14 @@ class DuplicateRecipeView(discord.ui.View):
         self,
         *,
         api_client: RecipeApiClient,
-        source_url: str,
+        import_action: ImportAction,
         owner_id: int,
         timeout: float = 300,
     ) -> None:
         super().__init__(timeout=timeout)
 
         self.api_client = api_client
-        self.source_url = source_url
+        self.import_action = import_action
         self.owner_id = owner_id
 
     async def interaction_check(
@@ -191,10 +197,7 @@ class DuplicateRecipeView(discord.ui.View):
         await interaction.response.defer()
 
         try:
-            result = await self.api_client.import_website_recipe(
-                self.source_url,
-                force=True,
-            )
+            result = await self.import_action(True)
         except httpx.HTTPStatusError as exc:
             await interaction.followup.send(
                 (

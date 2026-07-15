@@ -117,3 +117,71 @@ def test_preview_website_recipe_uses_preview_endpoint() -> None:
     assert result.destination is None
     assert result.recipe is not None
     assert result.recipe.title == "Pasta"
+
+
+def test_preview_manual_recipe_uses_manual_preview_endpoint() -> None:
+    recipe_text = "Soup\n\nIngrediënten:\n- water\n\nBereiding:\n1. Meng alles."
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url == "https://api.example.com/imports/manual/preview"
+        assert json.loads(request.content) == {
+            "text": recipe_text,
+        }
+
+        return httpx.Response(
+            status_code=200,
+            json={
+                "import_id": "44444444-4444-4444-4444-444444444444",
+                "status": "success",
+                "destination": None,
+                "recipe": None,
+                "warnings": [],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="https://api.example.com",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(client.preview_manual_recipe(recipe_text))
+
+    assert result.destination is None
+
+
+def test_import_manual_recipe_passes_force_flag() -> None:
+    recipe_text = "Soup\n\nIngrediënten:\n- water\n\nBereiding:\n1. Meng alles."
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url == "https://api.example.com/imports/manual"
+        assert json.loads(request.content) == {
+            "text": recipe_text,
+            "force": True,
+        }
+
+        return httpx.Response(
+            status_code=201,
+            json={
+                "import_id": "55555555-5555-5555-5555-555555555555",
+                "status": "success",
+                "destination": "/data/recipes/soup.md",
+                "recipe": None,
+                "warnings": [],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="https://api.example.com",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.import_manual_recipe(
+            recipe_text,
+            force=True,
+        )
+    )
+
+    assert result.destination == "/data/recipes/soup.md"
