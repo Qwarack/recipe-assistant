@@ -130,3 +130,47 @@ title: Pasta Carbonara
     result = detector.find_by_title("Tomatensoep")
 
     assert result is None
+
+
+def test_finds_recipe_with_matching_content_hash(
+    tmp_path: Path,
+) -> None:
+    recipe_path = tmp_path / "pasta.md"
+    recipe_path.write_text(
+        """---
+title: Pasta Carbonara
+content_hash: abc123
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    detector = RecipeDuplicateDetector(tmp_path)
+
+    result = detector.find_by_content_hash("abc123")
+
+    assert result == recipe_path
+
+
+def test_returns_none_when_content_hash_does_not_match(
+    tmp_path: Path,
+) -> None:
+    recipe_path = tmp_path / "pasta.md"
+    recipe_path.write_text(
+        """---
+title: Pasta Carbonara
+content_hash: abc123
+---
+
+# Pasta Carbonara
+""",
+        encoding="utf-8",
+    )
+
+    detector = RecipeDuplicateDetector(tmp_path)
+
+    result = detector.find_by_content_hash("different-hash")
+
+    assert result is None

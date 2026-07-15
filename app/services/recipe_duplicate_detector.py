@@ -69,3 +69,22 @@ class RecipeDuplicateDetector:
                 return recipe_path
 
         return None
+
+    def find_by_content_hash(
+        self,
+        content_hash: str,
+    ) -> Path | None:
+        if not self.recipes_path.exists():
+            return None
+
+        for recipe_path in self.recipes_path.glob("*.md"):
+            frontmatter = self._read_frontmatter(recipe_path)
+            existing_hash = frontmatter.get("content_hash")
+
+            if not isinstance(existing_hash, str):
+                continue
+
+            if existing_hash == content_hash:
+                return recipe_path
+
+        return None

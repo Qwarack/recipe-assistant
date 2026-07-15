@@ -30,10 +30,12 @@ class RecipeImportService:
         if result.recipe is None:
             return result, None
 
+        content_hash = calculate_recipe_hash(result.recipe)
+
         recipe = result.recipe.model_copy(
             update={
                 "import_id": result.import_id,
-                "content_hash": calculate_recipe_hash(result.recipe),
+                "content_hash": content_hash,
             }
         )
 
@@ -68,6 +70,29 @@ class RecipeImportService:
                 )
 
                 return duplicate_result, existing_path
+
+        existing_hash_path = self.duplicate_detector.find_by_content_hash(content_hash)
+
+        if existing_hash_path is not None:
+            duplicate_warning = ImportWarning(
+                code="duplicate_content",
+                message=(
+                    "A recipe with identical content already exists at "
+                    f"{existing_hash_path}."
+                ),
+            )
+
+            duplicate_result = result.model_copy(
+                update={
+                    "status": ImportStatus.PARTIAL,
+                    "warnings": [
+                        *result.warnings,
+                        duplicate_warning,
+                    ],
+                }
+            )
+
+            return duplicate_result, existing_hash_path
 
         existing_title_path = self.duplicate_detector.find_by_title(recipe.title)
 

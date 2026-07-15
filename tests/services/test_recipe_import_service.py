@@ -5,6 +5,7 @@ from app.models.recipe import Ingredient, Recipe, SourceType
 from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
 from app.services.recipe_import_service import RecipeImportService
 from app.services.recipe_storage import RecipeStorage
+from app.utils.recipe_hash import calculate_recipe_hash
 
 
 class FakeImporter:
@@ -224,3 +225,56 @@ source_url: https://example.com/old-pasta
     markdown_files = list(tmp_path.glob("*.md"))
 
     assert len(markdown_files) == 2
+
+
+def test_import_does_not_save_duplicate_content(
+    tmp_path: Path,
+) -> None:
+    recipe = make_recipe().model_copy(
+        update={
+            "source_url": "https://example.com/new-source",
+        }
+    )
+
+    content_hash = calculate_recipe_hash(recipe)
+
+    existing_path = tmp_path / "existing-pasta.md"
+    existing_path.write_text(
+        f"""---
+title: Existing Pasta
+source_url: https://example.com/old-source
+content_hash: {content_hash}
+---
+
+# Existing Pasta
+""",
+        encoding="utf-8",
+    )
+
+    import_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=recipe,
+    )
+
+    importer = FakeImporter(import_result)
+    storage = RecipeStorage(
+        recipes_path=tmp_path,
+        renderer=FakeRenderer(),
+    )
+    duplicate_detector = RecipeDuplicateDetector(tmp_path)
+
+    service = RecipeImportService(
+        importer=importer,
+        storage=storage,
+        duplicate_detector=duplicate_detector,
+    )
+
+    result, destination = service.import_and_save("https://example.com/new-source")
+
+    assert result.status is ImportStatus.PARTIAL
+    assert destination == existing_path
+    assert result.warnings[-1].code == "duplicate_content"
+
+    markdown_files = list(tmp_path.glob("*.md"))
+
+    assert markdown_files == [existing_path]
