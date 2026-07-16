@@ -13,6 +13,7 @@ class Settings(BaseSettings):
     database_path: Path = Path("data/database/recipes.db")
     imports_path: Path = Path("/data/imports")
     api_base_url: str = "http://127.0.0.1:8000"
+    discord_allowed_role_ids: str | None = None
 
     model_config = SettingsConfigDict(
         env_file=".env",

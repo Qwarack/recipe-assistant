@@ -18,6 +18,13 @@ logger = logging.getLogger(__name__)
 EPHERMAL_RESPONSE = False  # Set to True to make bot responses only visible to the user
 
 
+def _parse_allowed_role_ids(value: str | None) -> set[int]:
+    if value is None:
+        return set()
+
+    return {int(role_id.strip()) for role_id in value.split(",") if role_id.strip()}
+
+
 def create_bot() -> commands.Bot:
     settings = get_settings()
     intents = discord.Intents.default()
@@ -312,6 +319,25 @@ def create_bot() -> commands.Bot:
                 "Dit commando mag alleen in het "
                 "ingestelde receptenkanaal worden gebruikt.",
                 ephemeral=EPHERMAL_RESPONSE,
+            )
+            return
+
+        member = interaction.user
+
+        if not isinstance(member, discord.Member):
+            await interaction.response.send_message(
+                "Ik kon je serverrollen niet controleren.",
+                ephemeral=True,
+            )
+            return
+
+        allowed_role_ids = _parse_allowed_role_ids(settings.discord_allowed_role_ids)
+        member_role_ids = {role.id for role in member.roles}
+
+        if allowed_role_ids and member_role_ids.isdisjoint(allowed_role_ids):
+            await interaction.response.send_message(
+                "Je hebt geen toestemming om recepten te verwijderen.",
+                ephemeral=True,
             )
             return
 
