@@ -6,7 +6,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
-from app.bot.embeds import build_recipe_import_embed
+from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.modals import ManualRecipeModal
 from app.bot.views import RecipeImportView
 from app.core.config import get_settings
@@ -202,6 +202,66 @@ def create_bot() -> commands.Bot:
         )
 
         embed.set_footer(text=f"{len(results)} resultaat/resultaten")
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+
+    @recipe_group.command(
+        name="toon",
+        description="Toon een opgeslagen recept",
+    )
+    @app_commands.describe(
+        identifier="Recept-ID, bijvoorbeeld pasta-carbonara",
+    )
+    async def show_recipe(
+        interaction: discord.Interaction,
+        identifier: str,
+    ) -> None:
+        if (
+            settings.discord_allowed_channel_id is not None
+            and interaction.channel_id != settings.discord_allowed_channel_id
+        ):
+            await interaction.response.send_message(
+                "Dit commando mag alleen in het "
+                "ingestelde receptenkanaal worden gebruikt.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=True,
+        )
+
+        try:
+            recipe = await api_client.get_recipe(identifier)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await interaction.followup.send(
+                    f"Geen recept gevonden met ID `{identifier}`.",
+                    ephemeral=True,
+                )
+                return
+
+            await interaction.followup.send(
+                (
+                    "Het recept kon niet worden opgehaald. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Discord recipe detail request failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        embed = build_recipe_detail_embed(recipe)
 
         await interaction.followup.send(
             embed=embed,
