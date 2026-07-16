@@ -3,7 +3,12 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
-from app.bot.views import DuplicateRecipeView, RecipeDeleteView, RecipeImportView
+from app.bot.views import (
+    DetectedUrlView,
+    DuplicateRecipeView,
+    RecipeDeleteView,
+    RecipeImportView,
+)
 
 
 async def unexpected_import(force: bool) -> RecipeImportResponse:
@@ -225,3 +230,17 @@ def test_confirm_delete_edits_ephemeral_interaction_response() -> None:
         view=view,
     )
     interaction.message.edit.assert_not_awaited()
+
+
+def test_detected_url_view_contains_preview_button() -> None:
+    view = DetectedUrlView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        source_url="https://example.com/pasta",
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert len(buttons) == 1
+    assert buttons[0].label == "Preview maken"
+    assert buttons[0].style is discord.ButtonStyle.primary
