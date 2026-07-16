@@ -25,6 +25,17 @@ class Settings(BaseSettings):
     discord_guild_id: int | None = None
     discord_allowed_channel_id: int | None = None
 
+    @property
+    def allowed_discord_role_ids(self) -> set[int]:
+        if self.discord_allowed_role_ids is None:
+            return set()
+
+        return {
+            int(role_id.strip())
+            for role_id in self.discord_allowed_role_ids.split(",")
+            if role_id.strip()
+        }
+
 
 @lru_cache
 def get_settings() -> Settings:

@@ -17,3 +17,31 @@ async def ensure_allowed_channel(
     )
 
     return False
+
+
+async def ensure_allowed_role(
+    interaction: discord.Interaction,
+    allowed_role_ids: set[int],
+) -> bool:
+    if not allowed_role_ids:
+        return True
+
+    member = interaction.user
+
+    if not isinstance(member, discord.Member):
+        await interaction.response.send_message(
+            "Ik kon je serverrollen niet controleren.",
+            ephemeral=True,
+        )
+        return False
+
+    member_role_ids = {role.id for role in member.roles}
+
+    if member_role_ids.isdisjoint(allowed_role_ids):
+        await interaction.response.send_message(
+            "Je hebt geen toestemming om deze actie uit te voeren.",
+            ephemeral=True,
+        )
+        return False
+
+    return True

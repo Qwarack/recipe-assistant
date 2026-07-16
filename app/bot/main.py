@@ -8,7 +8,7 @@ from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.attachments import validate_recipe_attachment
-from app.bot.checks import ensure_allowed_channel
+from app.bot.checks import ensure_allowed_channel, ensure_allowed_role
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
@@ -19,13 +19,6 @@ from app.core.logging import configure_logging
 logger = logging.getLogger(__name__)
 
 EPHERMAL_RESPONSE = False  # Set to True to make bot responses only visible to the user
-
-
-def _parse_allowed_role_ids(value: str | None) -> set[int]:
-    if value is None:
-        return set()
-
-    return {int(role_id.strip()) for role_id in value.split(",") if role_id.strip()}
 
 
 def create_bot() -> commands.Bot:
@@ -64,6 +57,12 @@ def create_bot() -> commands.Bot:
         if not await ensure_allowed_channel(
             interaction,
             settings.discord_allowed_channel_id,
+        ):
+            return
+
+        if not await ensure_allowed_role(
+            interaction,
+            settings.allowed_discord_role_ids,
         ):
             return
 
@@ -141,6 +140,12 @@ def create_bot() -> commands.Bot:
         if not await ensure_allowed_channel(
             interaction,
             settings.discord_allowed_channel_id,
+        ):
+            return
+
+        if not await ensure_allowed_role(
+            interaction,
+            settings.allowed_discord_role_ids,
         ):
             return
 
@@ -326,23 +331,10 @@ def create_bot() -> commands.Bot:
         ):
             return
 
-        member = interaction.user
-
-        if not isinstance(member, discord.Member):
-            await interaction.response.send_message(
-                "Ik kon je serverrollen niet controleren.",
-                ephemeral=True,
-            )
-            return
-
-        allowed_role_ids = _parse_allowed_role_ids(settings.discord_allowed_role_ids)
-        member_role_ids = {role.id for role in member.roles}
-
-        if allowed_role_ids and member_role_ids.isdisjoint(allowed_role_ids):
-            await interaction.response.send_message(
-                "Je hebt geen toestemming om recepten te verwijderen.",
-                ephemeral=True,
-            )
+        if not await ensure_allowed_role(
+            interaction,
+            settings.allowed_discord_role_ids,
+        ):
             return
 
         await interaction.response.defer(
@@ -444,6 +436,12 @@ def create_bot() -> commands.Bot:
         if not await ensure_allowed_channel(
             interaction,
             settings.discord_allowed_channel_id,
+        ):
+            return
+
+        if not await ensure_allowed_role(
+            interaction,
+            settings.allowed_discord_role_ids,
         ):
             return
 

@@ -59,7 +59,7 @@ def test_delete_command_rejects_member_before_deferring(monkeypatch) -> None:
     asyncio.run(delete_command.callback(interaction, "pasta-carbonara"))
 
     interaction.response.send_message.assert_awaited_once_with(
-        "Je hebt geen toestemming om recepten te verwijderen.",
+        "Je hebt geen toestemming om deze actie uit te voeren.",
         ephemeral=True,
     )
     interaction.response.defer.assert_not_awaited()
@@ -168,3 +168,42 @@ def test_upload_command_creates_save_view_with_attachment_content(monkeypatch) -
         content_type="text/markdown",
         force=True,
     )
+
+
+def test_recipe_add_commands_reject_member_without_allowed_role(monkeypatch) -> None:
+    settings = Settings(
+        _env_file=None,
+        discord_allowed_role_ids="123",
+    )
+    api_client = MagicMock()
+    monkeypatch.setattr("app.bot.main.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.bot.main.RecipeApiClient",
+        MagicMock(return_value=api_client),
+    )
+    bot = create_bot()
+    recipe_group = bot.tree.get_command("recept")
+    attachment = MagicMock(spec=discord.Attachment)
+
+    command_arguments = {
+        "import": ("https://example.com/pasta",),
+        "tekst": (),
+        "upload": (attachment,),
+    }
+
+    for command_name, arguments in command_arguments.items():
+        interaction = MagicMock()
+        interaction.channel_id = None
+        interaction.user = MagicMock(spec=discord.Member)
+        interaction.user.roles = [MagicMock(id=456)]
+        interaction.response.send_message = AsyncMock()
+        interaction.response.defer = AsyncMock()
+
+        command = recipe_group.get_command(command_name)
+        asyncio.run(command.callback(interaction, *arguments))
+
+        interaction.response.send_message.assert_awaited_once_with(
+            "Je hebt geen toestemming om deze actie uit te voeren.",
+            ephemeral=True,
+        )
+        interaction.response.defer.assert_not_awaited()
