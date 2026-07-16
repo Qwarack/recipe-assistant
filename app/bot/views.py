@@ -372,3 +372,97 @@ class RecipeDeleteView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = True
+
+
+class DetectedUrlView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        api_client: RecipeApiClient,
+        source_url: str,
+        owner_id: int,
+        timeout: float = 300,
+    ) -> None:
+        super().__init__(timeout=timeout)
+
+        self.api_client = api_client
+        self.source_url = source_url
+        self.owner_id = owner_id
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction,
+    ) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+
+        await interaction.response.send_message(
+            "Alleen de gebruiker die deze URL plaatste mag de preview starten.",
+            ephemeral=True,
+        )
+        return False
+
+    @discord.ui.button(
+        label="Preview maken",
+        style=discord.ButtonStyle.primary,
+    )
+    async def preview_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=True,
+        )
+
+        try:
+            result = await self.api_client.preview_website_recipe(self.source_url)
+        except httpx.HTTPStatusError as exc:
+            await interaction.followup.send(
+                (
+                    "De URL kon niet worden verwerkt. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Detected URL preview request failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        async def save_website(
+            force: bool,
+        ) -> RecipeImportResponse:
+            return await self.api_client.import_website_recipe(
+                self.source_url,
+                force=force,
+            )
+
+        embed = build_recipe_import_embed(result)
+
+        import_view = RecipeImportView(
+            api_client=self.api_client,
+            import_action=save_website,
+            owner_id=self.owner_id,
+        )
+
+        message = await interaction.followup.send(
+            embed=embed,
+            view=import_view,
+            ephemeral=True,
+            wait=True,
+        )
+
+        import_view.message = message
+
+        button.disabled = True
+
+        if interaction.message is not None:
+            await interaction.message.edit(view=self)
+
+        self.stop()

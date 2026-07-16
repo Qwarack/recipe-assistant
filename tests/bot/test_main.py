@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from app.bot.api_client import RecipeImportResponse
-from app.bot.main import create_bot
+from app.bot.main import EPHERMAL_RESPONSE, create_bot
 from app.bot.views import RecipeImportView
 from app.core.config import Settings
 from discord.ext import commands
@@ -99,7 +99,7 @@ def test_delete_command_accepts_configured_role_id(monkeypatch) -> None:
     interaction.response.send_message.assert_not_awaited()
     interaction.response.defer.assert_awaited_once_with(
         thinking=True,
-        ephemeral=False,
+        ephemeral=EPHERMAL_RESPONSE,
     )
     api_client.get_recipe.assert_awaited_once_with("pasta-carbonara")
     interaction.followup.send.assert_awaited_once()

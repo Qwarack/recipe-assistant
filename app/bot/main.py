@@ -13,13 +13,13 @@ from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
 from app.bot.url_utils import extract_first_url
-from app.bot.views import RecipeDeleteView, RecipeImportView
+from app.bot.views import DetectedUrlView, RecipeDeleteView, RecipeImportView
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
 logger = logging.getLogger(__name__)
 
-EPHERMAL_RESPONSE = False  # Set to True to make bot responses only visible to the user
+EPHERMAL_RESPONSE = True  # Set to True to make bot responses only visible to the user
 
 
 def create_bot() -> commands.Bot:
@@ -454,13 +454,13 @@ def create_bot() -> commands.Bot:
         if not validation.valid:
             await interaction.response.send_message(
                 validation.error or "Ongeldig bestand.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
 
         try:
@@ -475,7 +475,7 @@ def create_bot() -> commands.Bot:
             logger.exception("Downloading Discord recipe attachment failed")
             await interaction.followup.send(
                 "Het bestand kon niet van Discord worden gedownload.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
         except httpx.HTTPStatusError as exc:
@@ -484,14 +484,14 @@ def create_bot() -> commands.Bot:
                     "Het bestand kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
         except httpx.HTTPError:
             logger.exception("Recipe upload preview request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
@@ -516,7 +516,7 @@ def create_bot() -> commands.Bot:
         message = await interaction.followup.send(
             embed=embed,
             view=view,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
             wait=True,
         )
 
@@ -552,11 +552,15 @@ def create_bot() -> commands.Bot:
         if url is None:
             return
 
+        view = DetectedUrlView(
+            api_client=api_client,
+            source_url=url,
+            owner_id=message.author.id,
+        )
+
         await message.reply(
-            (
-                "Ik heb een URL gevonden. "
-                "Gebruik `/recept import` om eerst een preview te bekijken."
-            ),
+            "Ik heb een mogelijke recepten-URL gevonden.",
+            view=view,
             mention_author=False,
         )
 
