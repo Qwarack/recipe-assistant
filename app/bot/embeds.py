@@ -1,6 +1,7 @@
 import discord
 
 from app.bot.api_client import RecipeDetail, RecipeImportResponse
+from app.bot.text_utils import split_text
 
 
 def build_recipe_import_embed(
@@ -66,11 +67,19 @@ def build_recipe_import_embed(
     if result.warnings:
         warning_lines = [f"• {warning['message']}" for warning in result.warnings]
 
-        embed.add_field(
-            name="Waarschuwingen",
-            value="\n".join(warning_lines)[:1024],
-            inline=False,
-        )
+        warning_chunks = split_text(warning_lines)
+
+        for index, chunk in enumerate(
+            warning_chunks,
+            start=1,
+        ):
+            field_name = "Waarschuwingen" if index == 1 else f"Waarschuwingen ({index})"
+
+            embed.add_field(
+                name=field_name,
+                value=chunk,
+                inline=False,
+            )
 
     if result.destination is not None:
         embed.set_footer(text=f"Opgeslagen als: {result.destination}")
@@ -103,27 +112,57 @@ def build_recipe_detail_embed(
     if summary_parts:
         embed.description = "\n".join(summary_parts)
 
-    ingredient_text = "\n".join(f"• {ingredient}" for ingredient in recipe.ingredients)
+    ingredient_lines = [f"• {ingredient}" for ingredient in recipe.ingredients]
 
-    embed.add_field(
-        name="Ingrediënten",
-        value=ingredient_text[:1024] or "Geen ingrediënten gevonden.",
-        inline=False,
-    )
+    ingredient_chunks = split_text(ingredient_lines)
 
-    instruction_text = "\n".join(
+    if not ingredient_chunks:
+        embed.add_field(
+            name="Ingrediënten",
+            value="Geen ingrediënten gevonden.",
+            inline=False,
+        )
+    else:
+        for index, chunk in enumerate(
+            ingredient_chunks,
+            start=1,
+        ):
+            field_name = "Ingrediënten" if index == 1 else f"Ingrediënten ({index})"
+
+            embed.add_field(
+                name=field_name,
+                value=chunk,
+                inline=False,
+            )
+
+    instruction_lines = [
         f"{index}. {instruction}"
         for index, instruction in enumerate(
             recipe.instructions,
             start=1,
         )
-    )
+    ]
 
-    embed.add_field(
-        name="Bereiding",
-        value=instruction_text[:1024] or "Geen stappen gevonden.",
-        inline=False,
-    )
+    instruction_chunks = split_text(instruction_lines)
+
+    if not instruction_chunks:
+        embed.add_field(
+            name="Bereiding",
+            value="Geen stappen gevonden.",
+            inline=False,
+        )
+    else:
+        for index, chunk in enumerate(
+            instruction_chunks,
+            start=1,
+        ):
+            field_name = "Bereiding" if index == 1 else f"Bereiding ({index})"
+
+            embed.add_field(
+                name=field_name,
+                value=chunk,
+                inline=False,
+            )
 
     if recipe.tags:
         embed.add_field(

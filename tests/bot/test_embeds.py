@@ -94,3 +94,64 @@ def test_builds_recipe_detail_embed() -> None:
     assert embed.fields[0].name == "Ingrediënten"
     assert "400 g spaghetti" in embed.fields[0].value
     assert embed.footer.text == ("Recept-ID: pasta-carbonara")
+
+
+def test_recipe_detail_embed_splits_long_ingredients() -> None:
+    recipe = RecipeDetail(
+        identifier="groot-recept",
+        title="Groot recept",
+        ingredients=[f"Ingrediënt {index} " + ("x" * 200) for index in range(10)],
+        instructions=["Bereid alles."],
+        servings=None,
+        prep_time_minutes=None,
+        cook_time_minutes=None,
+        total_time_minutes=None,
+        source_url=None,
+        tags=[],
+        meal_types=[],
+    )
+
+    embed = build_recipe_detail_embed(recipe)
+
+    ingredient_fields = [
+        field for field in embed.fields if field.name.startswith("Ingrediënten")
+    ]
+
+    assert len(ingredient_fields) > 1
+
+    assert all(len(field.value) <= 1024 for field in ingredient_fields)
+
+
+def test_recipe_import_embed_splits_long_warnings() -> None:
+    result = RecipeImportResponse(
+        import_id="abc123",
+        status="partial",
+        destination=None,
+        recipe=RecipePreview(
+            title="Testrecept",
+            servings=None,
+            prep_time_minutes=None,
+            cook_time_minutes=None,
+            total_time_minutes=None,
+            ingredient_count=1,
+            instruction_count=1,
+            source_url=None,
+        ),
+        warnings=[
+            {
+                "code": f"warning_{index}",
+                "message": f"Waarschuwing {index} " + ("x" * 250),
+            }
+            for index in range(10)
+        ],
+    )
+
+    embed = build_recipe_import_embed(result)
+
+    warning_fields = [
+        field for field in embed.fields if field.name.startswith("Waarschuwingen")
+    ]
+
+    assert len(warning_fields) > 1
+
+    assert all(len(field.value) <= 1024 for field in warning_fields)
