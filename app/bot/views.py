@@ -319,6 +319,17 @@ class RecipeDeleteView(discord.ui.View):
             )
             return
 
+        logger.info(
+            "Discord recipe deleted",
+            extra={
+                "recipe_identifier": self.identifier,
+                "recipe_title": self.recipe_title,
+                "discord_user_id": interaction.user.id,
+                "discord_guild_id": interaction.guild_id,
+                "discord_channel_id": interaction.channel_id,
+            },
+        )
+
         await interaction.edit_original_response(
             content=f"**{self.recipe_title}** is verwijderd.",
             embed=None,
@@ -337,6 +348,17 @@ class RecipeDeleteView(discord.ui.View):
         button: discord.ui.Button,
     ) -> None:
         self._disable_all_buttons()
+
+        logger.info(
+            "Discord recipe deletion cancelled",
+            extra={
+                "recipe_identifier": self.identifier,
+                "recipe_title": self.recipe_title,
+                "discord_user_id": interaction.user.id,
+                "discord_guild_id": interaction.guild_id,
+                "discord_channel_id": interaction.channel_id,
+            },
+        )
 
         await interaction.response.edit_message(
             content=(f"Verwijderen van **{self.recipe_title}** is geannuleerd."),

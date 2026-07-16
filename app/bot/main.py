@@ -372,6 +372,18 @@ def create_bot() -> commands.Bot:
             )
             return
 
+        logger.info(
+            "Discord recipe delete requested",
+            extra={
+                "recipe_identifier": recipe.identifier,
+                "recipe_title": recipe.title,
+                "discord_user_id": interaction.user.id,
+                "discord_user_name": str(interaction.user),
+                "discord_guild_id": interaction.guild_id,
+                "discord_channel_id": interaction.channel_id,
+            },
+        )
+
         view = RecipeDeleteView(
             api_client=api_client,
             identifier=recipe.identifier,
