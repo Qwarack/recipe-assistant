@@ -5,6 +5,9 @@ from fastapi import APIRouter, Depends, HTTPException, Query, status
 from app.core.config import get_settings
 from app.models.recipe_detail import RecipeDetail
 from app.models.recipe_search import RecipeSearchResult
+from app.services.recipe_delete_service import (
+    RecipeDeleteService,
+)
 from app.services.recipe_detail_service import (
     RecipeDetailService,
 )
@@ -16,6 +19,12 @@ router = APIRouter(
     prefix="/recipes",
     tags=["recipes"],
 )
+
+
+def create_recipe_delete_service() -> RecipeDeleteService:
+    settings = get_settings()
+
+    return RecipeDeleteService(recipes_path=settings.recipes_path)
 
 
 def create_recipe_search_service() -> RecipeSearchService:
@@ -75,3 +84,23 @@ def get_recipe(
         )
 
     return recipe
+
+
+@router.delete(
+    "/{identifier}",
+    status_code=status.HTTP_204_NO_CONTENT,
+)
+def delete_recipe(
+    identifier: str,
+    service: Annotated[
+        RecipeDeleteService,
+        Depends(create_recipe_delete_service),
+    ],
+) -> None:
+    deleted = service.delete_by_identifier(identifier)
+
+    if not deleted:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="Recipe not found",
+        )
