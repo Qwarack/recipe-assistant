@@ -185,3 +185,43 @@ def test_import_manual_recipe_passes_force_flag() -> None:
     )
 
     assert result.destination == "/data/recipes/soup.md"
+
+
+def test_import_uploaded_recipe_sends_multipart_file_and_force_flag() -> None:
+    content = b"# Pasta Carbonara"
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == "/imports/upload"
+        assert request.url.params["force"] == "true"
+        assert request.headers["content-type"].startswith("multipart/form-data;")
+        assert b"pasta.md" in request.content
+        assert b"text/markdown" in request.content
+        assert content in request.content
+
+        return httpx.Response(
+            status_code=200,
+            json={
+                "import_id": "66666666-6666-6666-6666-666666666666",
+                "status": "success",
+                "destination": "/data/recipes/pasta.md",
+                "recipe": None,
+                "warnings": [],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="https://api.example.com",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.import_uploaded_recipe(
+            filename="pasta.md",
+            content=content,
+            content_type="text/markdown",
+            force=True,
+        )
+    )
+
+    assert result.destination == "/data/recipes/pasta.md"

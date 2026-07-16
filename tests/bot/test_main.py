@@ -2,7 +2,9 @@ import asyncio
 from unittest.mock import AsyncMock, MagicMock
 
 import discord
+from app.bot.api_client import RecipeImportResponse
 from app.bot.main import create_bot
+from app.bot.views import RecipeImportView
 from app.core.config import Settings
 from discord.ext import commands
 
@@ -90,3 +92,68 @@ def test_delete_command_accepts_configured_role_id(monkeypatch) -> None:
     )
     api_client.get_recipe.assert_awaited_once_with("pasta-carbonara")
     interaction.followup.send.assert_awaited_once()
+
+
+def test_upload_command_creates_save_view_with_attachment_content(monkeypatch) -> None:
+    settings = Settings(_env_file=None)
+    preview_result = RecipeImportResponse(
+        import_id="preview-id",
+        status="success",
+        destination=None,
+        recipe=None,
+        warnings=[],
+    )
+    import_result = RecipeImportResponse(
+        import_id="import-id",
+        status="success",
+        destination="/data/recipes/pasta.md",
+        recipe=None,
+        warnings=[],
+    )
+    api_client = MagicMock()
+    api_client.preview_uploaded_recipe = AsyncMock(return_value=preview_result)
+    api_client.import_uploaded_recipe = AsyncMock(return_value=import_result)
+    monkeypatch.setattr("app.bot.main.get_settings", lambda: settings)
+    monkeypatch.setattr(
+        "app.bot.main.RecipeApiClient",
+        MagicMock(return_value=api_client),
+    )
+    bot = create_bot()
+    recipe_group = bot.tree.get_command("recept")
+    upload_command = recipe_group.get_command("upload")
+    interaction = MagicMock()
+    interaction.channel_id = None
+    interaction.user.id = 123
+    interaction.response.defer = AsyncMock()
+    confirmation_message = MagicMock()
+    interaction.followup.send = AsyncMock(return_value=confirmation_message)
+    attachment = MagicMock(spec=discord.Attachment)
+    attachment.filename = "pasta.md"
+    attachment.size = 18
+    attachment.content_type = "text/markdown"
+    attachment.read = AsyncMock(return_value=b"# Pasta Carbonara")
+
+    asyncio.run(upload_command.callback(interaction, attachment))
+
+    api_client.preview_uploaded_recipe.assert_awaited_once_with(
+        filename="pasta.md",
+        content=b"# Pasta Carbonara",
+        content_type="text/markdown",
+    )
+    send_kwargs = interaction.followup.send.await_args.kwargs
+    view = send_kwargs["view"]
+
+    assert isinstance(view, RecipeImportView)
+    assert send_kwargs["ephemeral"] is True
+    assert send_kwargs["wait"] is True
+    assert view.message is confirmation_message
+
+    result = asyncio.run(view.import_action(True))
+
+    assert result is import_result
+    api_client.import_uploaded_recipe.assert_awaited_once_with(
+        filename="pasta.md",
+        content=b"# Pasta Carbonara",
+        content_type="text/markdown",
+        force=True,
+    )

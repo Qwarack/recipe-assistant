@@ -243,3 +243,67 @@ class RecipeApiClient:
             response = await client.delete(endpoint)
 
         response.raise_for_status()
+
+    async def preview_uploaded_recipe(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str | None = None,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/upload/preview"
+
+        files = {
+            "file": (
+                filename,
+                content,
+                content_type or "application/octet-stream",
+            )
+        }
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                files=files,
+            )
+
+        response.raise_for_status()
+
+        return _parse_import_response(response.json())
+
+    async def import_uploaded_recipe(
+        self,
+        *,
+        filename: str,
+        content: bytes,
+        content_type: str | None = None,
+        force: bool = False,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/upload"
+
+        files = {
+            "file": (
+                filename,
+                content,
+                content_type or "application/octet-stream",
+            )
+        }
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                params={
+                    "force": force,
+                },
+                files=files,
+            )
+
+        response.raise_for_status()
+
+        return _parse_import_response(response.json())

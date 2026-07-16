@@ -7,6 +7,7 @@ from discord import app_commands
 from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
+from app.bot.attachments import validate_recipe_attachment
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.modals import ManualRecipeModal
 from app.bot.views import RecipeDeleteView, RecipeImportView
@@ -420,6 +421,104 @@ def create_bot() -> commands.Bot:
             )
             for result in results
         ]
+
+    @recipe_group.command(
+        name="upload",
+        description="Importeer een receptbestand",
+    )
+    @app_commands.describe(
+        bestand="Markdown-, tekst- of HTML-bestand",
+    )
+    async def upload_recipe(
+        interaction: discord.Interaction,
+        bestand: discord.Attachment,
+    ) -> None:
+        if (
+            settings.discord_allowed_channel_id is not None
+            and interaction.channel_id != settings.discord_allowed_channel_id
+        ):
+            await interaction.response.send_message(
+                "Dit commando mag alleen in het ingestelde "
+                "receptenkanaal worden gebruikt.",
+                ephemeral=True,
+            )
+            return
+
+        validation = validate_recipe_attachment(
+            filename=bestand.filename,
+            size_bytes=bestand.size,
+        )
+
+        if not validation.valid:
+            await interaction.response.send_message(
+                validation.error or "Ongeldig bestand.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=True,
+        )
+
+        try:
+            content = await bestand.read()
+
+            result = await api_client.preview_uploaded_recipe(
+                filename=bestand.filename,
+                content=content,
+                content_type=bestand.content_type,
+            )
+        except discord.HTTPException:
+            logger.exception("Downloading Discord recipe attachment failed")
+            await interaction.followup.send(
+                "Het bestand kon niet van Discord worden gedownload.",
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPStatusError as exc:
+            await interaction.followup.send(
+                (
+                    "Het bestand kon niet worden verwerkt. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Recipe upload preview request failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        embed = build_recipe_import_embed(result)
+
+        async def save_upload(
+            force: bool,
+        ) -> RecipeImportResponse:
+            return await api_client.import_uploaded_recipe(
+                filename=bestand.filename,
+                content=content,
+                content_type=bestand.content_type,
+                force=force,
+            )
+
+        view = RecipeImportView(
+            api_client=api_client,
+            import_action=save_upload,
+            owner_id=interaction.user.id,
+        )
+
+        message = await interaction.followup.send(
+            embed=embed,
+            view=view,
+            ephemeral=True,
+            wait=True,
+        )
+
+        view.message = message
 
     bot.tree.add_command(recipe_group)
 
