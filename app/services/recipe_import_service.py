@@ -1,4 +1,5 @@
 from pathlib import Path
+from typing import TypeVar
 
 from app.importers.base import RecipeImporter
 from app.models.import_result import ImportResult, ImportStatus, ImportWarning
@@ -8,6 +9,8 @@ from app.services.recipe_storage import (
     RecipeStorage,
 )
 from app.utils.recipe_hash import calculate_recipe_hash
+
+SourceT = TypeVar("SourceT")
 
 
 class RecipeImportService:
@@ -29,6 +32,25 @@ class RecipeImportService:
     ) -> tuple[ImportResult, Path | None]:
         result = self.importer.import_recipe(source)
 
+        return self._save_result(result, force=force)
+
+    def import_and_save_with(
+        self,
+        source: SourceT,
+        *,
+        importer: RecipeImporter[SourceT],
+        force: bool = False,
+    ) -> tuple[ImportResult, Path | None]:
+        result = importer.import_recipe(source)
+
+        return self._save_result(result, force=force)
+
+    def _save_result(
+        self,
+        result: ImportResult,
+        *,
+        force: bool,
+    ) -> tuple[ImportResult, Path | None]:
         if result.recipe is None:
             return result, None
 
