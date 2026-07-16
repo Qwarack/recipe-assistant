@@ -2,7 +2,7 @@
 
 Self-hosted receptenimporter voor een homelabomgeving. De applicatie zet recepten uit verschillende bronnen om naar een gevalideerd `Recipe`-model en slaat ze op als consistente Markdown-bestanden met YAML-frontmatter.
 
-De huidige versie vormt **fase 1** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer.
+De huidige versie vormt **fase 1 en 2** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer.
 
 ## Huidige functionaliteit
 
