@@ -9,6 +9,7 @@ from discord.ext import commands
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.attachments import validate_recipe_attachment
 from app.bot.checks import ensure_allowed_channel, ensure_allowed_role
+from app.bot.constants import NOTICE_EPHEMERAL, PREVIEW_EPHEMERAL
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
@@ -18,8 +19,6 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 
 logger = logging.getLogger(__name__)
-
-EPHERMAL_RESPONSE = True  # Set to True to make bot responses only visible to the user
 
 
 def create_bot() -> commands.Bot:
@@ -69,7 +68,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -80,14 +79,14 @@ def create_bot() -> commands.Bot:
                     "De import kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe import request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -110,7 +109,7 @@ def create_bot() -> commands.Bot:
         message = await interaction.followup.send(
             embed=embed,
             view=view,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
             wait=True,
         )
 
@@ -186,7 +185,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -200,21 +199,21 @@ def create_bot() -> commands.Bot:
                     "De zoekopdracht kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe search request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
         if not results:
             await interaction.followup.send(
                 f"Geen recepten gevonden voor **{query}**.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -235,7 +234,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.followup.send(
             embed=embed,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
     @recipe_group.command(
@@ -257,7 +256,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -266,7 +265,7 @@ def create_bot() -> commands.Bot:
             if exc.response.status_code == 404:
                 await interaction.followup.send(
                     f"Geen recept gevonden met ID `{identifier}`.",
-                    ephemeral=EPHERMAL_RESPONSE,
+                    ephemeral=NOTICE_EPHEMERAL,
                 )
                 return
 
@@ -275,14 +274,14 @@ def create_bot() -> commands.Bot:
                     "Het recept kon niet worden opgehaald. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe detail request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -290,7 +289,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.followup.send(
             embed=embed,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
     @show_recipe.autocomplete("identifier")
@@ -340,7 +339,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -349,7 +348,7 @@ def create_bot() -> commands.Bot:
             if exc.response.status_code == 404:
                 await interaction.followup.send(
                     f"Geen recept gevonden met ID `{identifier}`.",
-                    ephemeral=EPHERMAL_RESPONSE,
+                    ephemeral=NOTICE_EPHEMERAL,
                 )
                 return
 
@@ -358,14 +357,14 @@ def create_bot() -> commands.Bot:
                     "Het recept kon niet worden opgehaald. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe delete preview failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -393,7 +392,7 @@ def create_bot() -> commands.Bot:
                 f"Weet je zeker dat je **{recipe.title}** definitief wilt verwijderen?"
             ),
             view=view,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
     @delete_recipe_command.autocomplete("identifier")
@@ -454,13 +453,13 @@ def create_bot() -> commands.Bot:
         if not validation.valid:
             await interaction.response.send_message(
                 validation.error or "Ongeldig bestand.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -475,7 +474,7 @@ def create_bot() -> commands.Bot:
             logger.exception("Downloading Discord recipe attachment failed")
             await interaction.followup.send(
                 "Het bestand kon niet van Discord worden gedownload.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPStatusError as exc:
@@ -484,14 +483,14 @@ def create_bot() -> commands.Bot:
                     "Het bestand kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Recipe upload preview request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=EPHERMAL_RESPONSE,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -516,7 +515,7 @@ def create_bot() -> commands.Bot:
         message = await interaction.followup.send(
             embed=embed,
             view=view,
-            ephemeral=EPHERMAL_RESPONSE,
+            ephemeral=PREVIEW_EPHEMERAL,
             wait=True,
         )
 

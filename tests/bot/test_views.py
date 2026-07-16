@@ -244,3 +244,36 @@ def test_detected_url_view_contains_preview_button() -> None:
     assert len(buttons) == 1
     assert buttons[0].label == "Preview maken"
     assert buttons[0].style is discord.ButtonStyle.primary
+
+
+def test_detected_url_view_sends_public_preview() -> None:
+    preview_result = RecipeImportResponse(
+        import_id="preview-id",
+        status="success",
+        destination=None,
+        recipe=None,
+        warnings=[],
+    )
+    api_client = MagicMock()
+    api_client.preview_website_recipe = AsyncMock(return_value=preview_result)
+    view = DetectedUrlView(
+        api_client=api_client,
+        source_url="https://example.com/pasta",
+        owner_id=123,
+    )
+    interaction = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock(return_value=MagicMock())
+    interaction.message = None
+
+    asyncio.run(view.preview_button.callback(interaction))
+
+    interaction.response.defer.assert_awaited_once_with(
+        thinking=True,
+        ephemeral=False,
+    )
+    send_kwargs = interaction.followup.send.await_args.kwargs
+
+    assert isinstance(send_kwargs["view"], RecipeImportView)
+    assert send_kwargs["ephemeral"] is False
+    assert send_kwargs["wait"] is True

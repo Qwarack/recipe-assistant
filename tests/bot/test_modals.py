@@ -62,12 +62,14 @@ Bereiding:
     api_client.preview_manual_recipe.assert_awaited_once_with(recipe_text)
     interaction.response.defer.assert_awaited_once_with(
         thinking=True,
-        ephemeral=True,
+        ephemeral=False,
     )
 
-    preview_view = interaction.followup.send.await_args.kwargs["view"]
+    send_kwargs = interaction.followup.send.await_args.kwargs
+    preview_view = send_kwargs["view"]
 
     assert isinstance(preview_view, RecipeImportView)
+    assert send_kwargs["ephemeral"] is False
 
     asyncio.run(preview_view.import_action(True))
 

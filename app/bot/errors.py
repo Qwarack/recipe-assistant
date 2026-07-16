@@ -3,6 +3,8 @@ import logging
 import discord
 from discord import app_commands
 
+from app.bot.constants import NOTICE_EPHEMERAL
+
 logger = logging.getLogger(__name__)
 
 
@@ -19,12 +21,12 @@ async def handle_app_command_error(
         if interaction.response.is_done():
             await interaction.followup.send(
                 message,
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
         else:
             await interaction.response.send_message(
                 message,
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
 
         return
@@ -39,10 +41,10 @@ async def handle_app_command_error(
     if interaction.response.is_done():
         await interaction.followup.send(
             message,
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
     else:
         await interaction.response.send_message(
             message,
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )

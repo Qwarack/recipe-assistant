@@ -5,6 +5,7 @@ import discord
 import httpx
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
+from app.bot.constants import NOTICE_EPHEMERAL, PREVIEW_EPHEMERAL
 from app.bot.embeds import build_recipe_import_embed
 
 logger = logging.getLogger(__name__)
@@ -45,7 +46,7 @@ class RecipeImportView(discord.ui.View):
 
         await interaction.response.send_message(
             "Alleen de gebruiker die deze import startte mag deze knoppen gebruiken.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 
@@ -70,14 +71,14 @@ class RecipeImportView(discord.ui.View):
                     "Het recept kon niet worden opgeslagen. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Saving Discord recipe import failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -103,7 +104,7 @@ class RecipeImportView(discord.ui.View):
                     "Dit recept lijkt al te bestaan. "
                     "Kies of je toch een nieuwe kopie wilt opslaan."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
 
             self.stop()
@@ -118,7 +119,7 @@ class RecipeImportView(discord.ui.View):
 
         await interaction.followup.send(
             "Het recept is opgeslagen.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
 
         self.stop()
@@ -181,7 +182,7 @@ class DuplicateRecipeView(discord.ui.View):
 
         await interaction.response.send_message(
             "Alleen de gebruiker die deze import startte mag deze knoppen gebruiken.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 
@@ -204,14 +205,14 @@ class DuplicateRecipeView(discord.ui.View):
                     "Het recept kon niet opnieuw worden opgeslagen. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Force-saving Discord recipe import failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -223,7 +224,7 @@ class DuplicateRecipeView(discord.ui.View):
         )
         await interaction.followup.send(
             "Het recept is opnieuw opgeslagen.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
 
         self.stop()
@@ -272,7 +273,7 @@ class RecipeDeleteView(discord.ui.View):
 
         await interaction.response.send_message(
             "Alleen de gebruiker die deze actie startte mag deze knoppen gebruiken.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 
@@ -287,7 +288,7 @@ class RecipeDeleteView(discord.ui.View):
     ) -> None:
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
 
         self._disable_all_buttons()
@@ -298,7 +299,7 @@ class RecipeDeleteView(discord.ui.View):
             if exc.response.status_code == 404:
                 await interaction.followup.send(
                     "Dit recept bestaat inmiddels niet meer.",
-                    ephemeral=True,
+                    ephemeral=NOTICE_EPHEMERAL,
                 )
                 self.stop()
                 return
@@ -308,14 +309,14 @@ class RecipeDeleteView(discord.ui.View):
                     "Het recept kon niet worden verwijderd. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Deleting Discord recipe failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -398,7 +399,7 @@ class DetectedUrlView(discord.ui.View):
 
         await interaction.response.send_message(
             "Alleen de gebruiker die deze URL plaatste mag de preview starten.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 
@@ -413,7 +414,7 @@ class DetectedUrlView(discord.ui.View):
     ) -> None:
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         try:
@@ -424,14 +425,14 @@ class DetectedUrlView(discord.ui.View):
                     "De URL kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Detected URL preview request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -454,7 +455,7 @@ class DetectedUrlView(discord.ui.View):
         message = await interaction.followup.send(
             embed=embed,
             view=import_view,
-            ephemeral=True,
+            ephemeral=PREVIEW_EPHEMERAL,
             wait=True,
         )
 

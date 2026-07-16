@@ -1,5 +1,7 @@
 import discord
 
+from app.bot.constants import NOTICE_EPHEMERAL
+
 
 async def ensure_allowed_channel(
     interaction: discord.Interaction,
@@ -13,7 +15,7 @@ async def ensure_allowed_channel(
 
     await interaction.response.send_message(
         "Dit commando mag alleen in het ingestelde receptenkanaal worden gebruikt.",
-        ephemeral=True,
+        ephemeral=NOTICE_EPHEMERAL,
     )
 
     return False
@@ -31,7 +33,7 @@ async def ensure_allowed_role(
     if not isinstance(member, discord.Member):
         await interaction.response.send_message(
             "Ik kon je serverrollen niet controleren.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 
@@ -40,7 +42,7 @@ async def ensure_allowed_role(
     if member_role_ids.isdisjoint(allowed_role_ids):
         await interaction.response.send_message(
             "Je hebt geen toestemming om deze actie uit te voeren.",
-            ephemeral=True,
+            ephemeral=NOTICE_EPHEMERAL,
         )
         return False
 

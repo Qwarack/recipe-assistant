@@ -4,6 +4,7 @@ import discord
 import httpx
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
+from app.bot.constants import NOTICE_EPHEMERAL, PREVIEW_EPHEMERAL
 from app.bot.embeds import build_recipe_import_embed
 from app.bot.views import RecipeImportView
 
@@ -40,7 +41,7 @@ class ManualRecipeModal(
     ) -> None:
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=PREVIEW_EPHEMERAL,
         )
 
         recipe_text = str(self.recipe_text)
@@ -53,14 +54,14 @@ class ManualRecipeModal(
                     "De recepttekst kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
         except httpx.HTTPError:
             logger.exception("Manual recipe preview request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=NOTICE_EPHEMERAL,
             )
             return
 
@@ -83,7 +84,7 @@ class ManualRecipeModal(
         message = await interaction.followup.send(
             embed=embed,
             view=view,
-            ephemeral=True,
+            ephemeral=PREVIEW_EPHEMERAL,
             wait=True,
         )
 

@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from app.bot.api_client import RecipeImportResponse
-from app.bot.main import EPHERMAL_RESPONSE, create_bot
+from app.bot.main import create_bot
 from app.bot.views import RecipeImportView
 from app.core.config import Settings
 from discord.ext import commands
@@ -99,7 +99,7 @@ def test_delete_command_accepts_configured_role_id(monkeypatch) -> None:
     interaction.response.send_message.assert_not_awaited()
     interaction.response.defer.assert_awaited_once_with(
         thinking=True,
-        ephemeral=EPHERMAL_RESPONSE,
+        ephemeral=False,
     )
     api_client.get_recipe.assert_awaited_once_with("pasta-carbonara")
     interaction.followup.send.assert_awaited_once()
@@ -155,7 +155,7 @@ def test_upload_command_creates_save_view_with_attachment_content(monkeypatch) -
     view = send_kwargs["view"]
 
     assert isinstance(view, RecipeImportView)
-    assert send_kwargs["ephemeral"] is True
+    assert send_kwargs["ephemeral"] is False
     assert send_kwargs["wait"] is True
     assert view.message is confirmation_message
 
