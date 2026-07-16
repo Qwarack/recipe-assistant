@@ -25,6 +25,21 @@ class RecipeImportResponse:
     warnings: list[dict[str, Any]]
 
 
+@dataclass(slots=True)
+class RecipeDetail:
+    identifier: str
+    title: str
+    ingredients: list[str]
+    instructions: list[str]
+    servings: int | None
+    prep_time_minutes: int | None
+    cook_time_minutes: int | None
+    total_time_minutes: int | None
+    source_url: str | None
+    tags: list[str]
+    meal_types: list[str]
+
+
 def _parse_import_response(
     payload: dict[str, Any],
 ) -> RecipeImportResponse:
@@ -190,3 +205,30 @@ class RecipeApiClient:
             )
             for item in payload
         ]
+
+    async def get_recipe(
+        self,
+        identifier: str,
+    ) -> RecipeDetail:
+        endpoint = f"{self.base_url}/recipes/{identifier}"
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(endpoint)
+
+        response.raise_for_status()
+
+        payload = response.json()
+
+        return RecipeDetail(
+            identifier=payload["identifier"],
+            title=payload["title"],
+            ingredients=payload.get("ingredients", []),
+            instructions=payload.get("instructions", []),
+            servings=payload.get("servings"),
+            prep_time_minutes=payload.get("prep_time_minutes"),
+            cook_time_minutes=payload.get("cook_time_minutes"),
+            total_time_minutes=payload.get("total_time_minutes"),
+            source_url=payload.get("source_url"),
+            tags=payload.get("tags", []),
+            meal_types=payload.get("meal_types", []),
+        )

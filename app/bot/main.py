@@ -132,6 +132,82 @@ def create_bot() -> commands.Bot:
 
         await interaction.response.send_modal(modal)
 
+    @recipe_group.command(
+        name="zoek",
+        description="Zoek in opgeslagen recepten",
+    )
+    @app_commands.describe(
+        query="Zoekterm, bijvoorbeeld pasta of vegetarisch",
+    )
+    async def search_recipe(
+        interaction: discord.Interaction,
+        query: str,
+    ) -> None:
+        if (
+            settings.discord_allowed_channel_id is not None
+            and interaction.channel_id != settings.discord_allowed_channel_id
+        ):
+            await interaction.response.send_message(
+                "Dit commando mag alleen in het "
+                "ingestelde receptenkanaal worden gebruikt.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=True,
+        )
+
+        try:
+            results = await api_client.search_recipes(
+                query,
+                limit=10,
+            )
+        except httpx.HTTPStatusError as exc:
+            await interaction.followup.send(
+                (
+                    "De zoekopdracht kon niet worden verwerkt. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Discord recipe search request failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        if not results:
+            await interaction.followup.send(
+                f"Geen recepten gevonden voor **{query}**.",
+                ephemeral=True,
+            )
+            return
+
+        lines: list[str] = []
+
+        for result in results:
+            if result.source_url is not None:
+                lines.append(f"• [{result.title}]({result.source_url})")
+            else:
+                lines.append(f"• **{result.title}**")
+
+        embed = discord.Embed(
+            title=f"Zoekresultaten voor: {query}",
+            description="\n".join(lines),
+        )
+
+        embed.set_footer(text=f"{len(results)} resultaat/resultaten")
+
+        await interaction.followup.send(
+            embed=embed,
+            ephemeral=True,
+        )
+
     bot.tree.add_command(recipe_group)
 
     @bot.event

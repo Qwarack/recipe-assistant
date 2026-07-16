@@ -1,8 +1,9 @@
 from app.bot.api_client import (
+    RecipeDetail,
     RecipeImportResponse,
     RecipePreview,
 )
-from app.bot.embeds import build_recipe_import_embed
+from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 
 
 def test_builds_recipe_import_embed() -> None:
@@ -61,3 +62,35 @@ def test_embed_includes_warnings() -> None:
     )
 
     assert "similar recipe" in warning_field.value
+
+
+def test_builds_recipe_detail_embed() -> None:
+    recipe = RecipeDetail(
+        identifier="pasta-carbonara",
+        title="Pasta Carbonara",
+        ingredients=[
+            "400 g spaghetti",
+            "4 eieren",
+        ],
+        instructions=[
+            "Kook de spaghetti.",
+            "Meng de eieren.",
+        ],
+        servings=4,
+        prep_time_minutes=10,
+        cook_time_minutes=20,
+        total_time_minutes=30,
+        source_url="https://example.com/carbonara",
+        tags=["pasta", "italian"],
+        meal_types=["dinner"],
+    )
+
+    embed = build_recipe_detail_embed(recipe)
+
+    assert embed.title == "Pasta Carbonara"
+    assert embed.url == "https://example.com/carbonara"
+    assert "Porties" in (embed.description or "")
+    assert len(embed.fields) == 4
+    assert embed.fields[0].name == "Ingrediënten"
+    assert "400 g spaghetti" in embed.fields[0].value
+    assert embed.footer.text == ("Recept-ID: pasta-carbonara")
