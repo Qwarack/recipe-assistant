@@ -244,3 +244,109 @@ class DuplicateRecipeView(discord.ui.View):
         )
 
         self.stop()
+
+
+class RecipeDeleteView(discord.ui.View):
+    def __init__(
+        self,
+        *,
+        api_client: RecipeApiClient,
+        identifier: str,
+        recipe_title: str,
+        owner_id: int,
+        timeout: float = 300,
+    ) -> None:
+        super().__init__(timeout=timeout)
+
+        self.api_client = api_client
+        self.identifier = identifier
+        self.recipe_title = recipe_title
+        self.owner_id = owner_id
+
+    async def interaction_check(
+        self,
+        interaction: discord.Interaction,
+    ) -> bool:
+        if interaction.user.id == self.owner_id:
+            return True
+
+        await interaction.response.send_message(
+            "Alleen de gebruiker die deze actie startte mag deze knoppen gebruiken.",
+            ephemeral=True,
+        )
+        return False
+
+    @discord.ui.button(
+        label="Definitief verwijderen",
+        style=discord.ButtonStyle.danger,
+    )
+    async def confirm_delete(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=True,
+        )
+
+        self._disable_all_buttons()
+
+        try:
+            await self.api_client.delete_recipe(self.identifier)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await interaction.followup.send(
+                    "Dit recept bestaat inmiddels niet meer.",
+                    ephemeral=True,
+                )
+                self.stop()
+                return
+
+            await interaction.followup.send(
+                (
+                    "Het recept kon niet worden verwijderd. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Deleting Discord recipe failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=True,
+            )
+            return
+
+        await interaction.edit_original_response(
+            content=f"**{self.recipe_title}** is verwijderd.",
+            embed=None,
+            view=self,
+        )
+
+        self.stop()
+
+    @discord.ui.button(
+        label="Annuleren",
+        style=discord.ButtonStyle.secondary,
+    )
+    async def cancel_delete(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        self._disable_all_buttons()
+
+        await interaction.response.edit_message(
+            content=(f"Verwijderen van **{self.recipe_title}** is geannuleerd."),
+            embed=None,
+            view=self,
+        )
+
+        self.stop()
+
+    def _disable_all_buttons(self) -> None:
+        for child in self.children:
+            if isinstance(child, discord.ui.Button):
+                child.disabled = True

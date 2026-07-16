@@ -3,7 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
-from app.bot.views import DuplicateRecipeView, RecipeImportView
+from app.bot.views import DuplicateRecipeView, RecipeDeleteView, RecipeImportView
 
 
 async def unexpected_import(force: bool) -> RecipeImportResponse:
@@ -178,3 +178,50 @@ def test_save_button_does_not_show_duplicate_view_for_title_warning() -> None:
     edit_kwargs = interaction.edit_original_response.await_args.kwargs
 
     assert edit_kwargs["view"] is view
+
+
+def test_recipe_delete_view_contains_confirmation_buttons() -> None:
+    view = RecipeDeleteView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        identifier="pasta-carbonara",
+        recipe_title="Pasta Carbonara",
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert [button.label for button in buttons] == [
+        "Definitief verwijderen",
+        "Annuleren",
+    ]
+
+    assert buttons[0].style is discord.ButtonStyle.danger
+
+
+def test_confirm_delete_edits_ephemeral_interaction_response() -> None:
+    api_client = MagicMock()
+    api_client.delete_recipe = AsyncMock()
+    view = RecipeDeleteView(
+        api_client=api_client,
+        identifier="pasta-carbonara",
+        recipe_title="Pasta Carbonara",
+        owner_id=123,
+    )
+    interaction = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.edit_original_response = AsyncMock()
+    interaction.message.edit = AsyncMock()
+
+    asyncio.run(view.confirm_delete.callback(interaction))
+
+    interaction.response.defer.assert_awaited_once_with(
+        thinking=True,
+        ephemeral=True,
+    )
+    api_client.delete_recipe.assert_awaited_once_with("pasta-carbonara")
+    interaction.edit_original_response.assert_awaited_once_with(
+        content="**Pasta Carbonara** is verwijderd.",
+        embed=None,
+        view=view,
+    )
+    interaction.message.edit.assert_not_awaited()

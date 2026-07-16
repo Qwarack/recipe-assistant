@@ -9,7 +9,7 @@ from discord.ext import commands
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.modals import ManualRecipeModal
-from app.bot.views import RecipeImportView
+from app.bot.views import RecipeDeleteView, RecipeImportView
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -283,6 +283,96 @@ def create_bot() -> commands.Bot:
             )
         except httpx.HTTPError:
             logger.exception("Discord recipe autocomplete request failed")
+            return []
+
+        return [
+            app_commands.Choice(
+                name=result.title[:100],
+                value=Path(result.path).stem[:100],
+            )
+            for result in results
+        ]
+
+    @recipe_group.command(
+        name="verwijder",
+        description="Verwijder een opgeslagen recept",
+    )
+    @app_commands.describe(
+        identifier="Het recept dat je wilt verwijderen",
+    )
+    async def delete_recipe_command(
+        interaction: discord.Interaction,
+        identifier: str,
+    ) -> None:
+        if (
+            settings.discord_allowed_channel_id is not None
+            and interaction.channel_id != settings.discord_allowed_channel_id
+        ):
+            await interaction.response.send_message(
+                "Dit commando mag alleen in het "
+                "ingestelde receptenkanaal worden gebruikt.",
+                ephemeral=EPHERMAL_RESPONSE,
+            )
+            return
+
+        await interaction.response.defer(
+            thinking=True,
+            ephemeral=EPHERMAL_RESPONSE,
+        )
+
+        try:
+            recipe = await api_client.get_recipe(identifier)
+        except httpx.HTTPStatusError as exc:
+            if exc.response.status_code == 404:
+                await interaction.followup.send(
+                    f"Geen recept gevonden met ID `{identifier}`.",
+                    ephemeral=EPHERMAL_RESPONSE,
+                )
+                return
+
+            await interaction.followup.send(
+                (
+                    "Het recept kon niet worden opgehaald. "
+                    f"De API gaf status {exc.response.status_code}."
+                ),
+                ephemeral=EPHERMAL_RESPONSE,
+            )
+            return
+        except httpx.HTTPError:
+            logger.exception("Discord recipe delete preview failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=EPHERMAL_RESPONSE,
+            )
+            return
+
+        view = RecipeDeleteView(
+            api_client=api_client,
+            identifier=recipe.identifier,
+            recipe_title=recipe.title,
+            owner_id=interaction.user.id,
+        )
+
+        await interaction.followup.send(
+            content=(
+                f"Weet je zeker dat je **{recipe.title}** definitief wilt verwijderen?"
+            ),
+            view=view,
+            ephemeral=EPHERMAL_RESPONSE,
+        )
+
+    @delete_recipe_command.autocomplete("identifier")
+    async def delete_recipe_autocomplete(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        try:
+            results = await api_client.search_recipes(
+                current,
+                limit=25,
+            )
+        except httpx.HTTPError:
+            logger.exception("Discord recipe delete autocomplete failed")
             return []
 
         return [

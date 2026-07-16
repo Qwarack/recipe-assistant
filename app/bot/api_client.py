@@ -232,3 +232,14 @@ class RecipeApiClient:
             tags=payload.get("tags", []),
             meal_types=payload.get("meal_types", []),
         )
+
+    async def delete_recipe(
+        self,
+        identifier: str,
+    ) -> None:
+        endpoint = f"{self.base_url}/recipes/{identifier}"
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.delete(endpoint)
+
+        response.raise_for_status()
