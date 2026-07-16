@@ -12,6 +12,7 @@ from app.bot.checks import ensure_allowed_channel, ensure_allowed_role
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
+from app.bot.url_utils import extract_first_url
 from app.bot.views import RecipeDeleteView, RecipeImportView
 from app.core.config import get_settings
 from app.core.logging import configure_logging
@@ -532,6 +533,34 @@ def create_bot() -> commands.Bot:
         )
 
     bot.tree.add_command(recipe_group)
+
+    @bot.event
+    async def on_message(
+        message: discord.Message,
+    ) -> None:
+        if message.author.bot:
+            return
+
+        if (
+            settings.discord_allowed_channel_id is not None
+            and message.channel.id != settings.discord_allowed_channel_id
+        ):
+            return
+
+        url = extract_first_url(message.content)
+
+        if url is None:
+            return
+
+        await message.reply(
+            (
+                "Ik heb een URL gevonden. "
+                "Gebruik `/recept import` om eerst een preview te bekijken."
+            ),
+            mention_author=False,
+        )
+
+        await bot.process_commands(message)
 
     @bot.event
     async def on_ready() -> None:
