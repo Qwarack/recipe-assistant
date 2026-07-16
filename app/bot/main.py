@@ -8,6 +8,7 @@ from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.attachments import validate_recipe_attachment
+from app.bot.checks import ensure_allowed_channel
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
@@ -60,17 +61,10 @@ def create_bot() -> commands.Bot:
         interaction: discord.Interaction,
         url: str,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                (
-                    "Dit commando mag alleen in het ingestelde "
-                    "receptenkanaal worden gebruikt."
-                ),
-                ephemeral=EPHERMAL_RESPONSE,
-            )
             return
 
         await interaction.response.defer(
@@ -144,17 +138,10 @@ def create_bot() -> commands.Bot:
     async def import_recipe_text(
         interaction: discord.Interaction,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                (
-                    "Dit commando mag alleen in het ingestelde "
-                    "receptenkanaal worden gebruikt."
-                ),
-                ephemeral=EPHERMAL_RESPONSE,
-            )
             return
 
         modal = ManualRecipeModal(
@@ -185,15 +172,10 @@ def create_bot() -> commands.Bot:
         interaction: discord.Interaction,
         query: str,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                "Dit commando mag alleen in het "
-                "ingestelde receptenkanaal worden gebruikt.",
-                ephemeral=EPHERMAL_RESPONSE,
-            )
             return
 
         await interaction.response.defer(
@@ -261,15 +243,10 @@ def create_bot() -> commands.Bot:
         interaction: discord.Interaction,
         identifier: str,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                "Dit commando mag alleen in het "
-                "ingestelde receptenkanaal worden gebruikt.",
-                ephemeral=EPHERMAL_RESPONSE,
-            )
             return
 
         await interaction.response.defer(
@@ -343,15 +320,10 @@ def create_bot() -> commands.Bot:
         interaction: discord.Interaction,
         identifier: str,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                "Dit commando mag alleen in het "
-                "ingestelde receptenkanaal worden gebruikt.",
-                ephemeral=EPHERMAL_RESPONSE,
-            )
             return
 
         member = interaction.user
@@ -469,15 +441,10 @@ def create_bot() -> commands.Bot:
         interaction: discord.Interaction,
         bestand: discord.Attachment,
     ) -> None:
-        if (
-            settings.discord_allowed_channel_id is not None
-            and interaction.channel_id != settings.discord_allowed_channel_id
+        if not await ensure_allowed_channel(
+            interaction,
+            settings.discord_allowed_channel_id,
         ):
-            await interaction.response.send_message(
-                "Dit commando mag alleen in het ingestelde "
-                "receptenkanaal worden gebruikt.",
-                ephemeral=True,
-            )
             return
 
         validation = validate_recipe_attachment(
