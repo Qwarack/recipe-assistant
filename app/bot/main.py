@@ -1,4 +1,5 @@
 import logging
+from pathlib import Path
 
 import discord
 import httpx
@@ -13,6 +14,8 @@ from app.core.config import get_settings
 from app.core.logging import configure_logging
 
 logger = logging.getLogger(__name__)
+
+EPHERMAL_RESPONSE = False  # Set to True to make bot responses only visible to the user
 
 
 def create_bot() -> commands.Bot:
@@ -52,13 +55,13 @@ def create_bot() -> commands.Bot:
                     "Dit commando mag alleen in het ingestelde "
                     "receptenkanaal worden gebruikt."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
 
         try:
@@ -69,14 +72,14 @@ def create_bot() -> commands.Bot:
                     "De import kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe import request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
@@ -99,7 +102,7 @@ def create_bot() -> commands.Bot:
         message = await interaction.followup.send(
             embed=embed,
             view=view,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
             wait=True,
         )
 
@@ -121,7 +124,7 @@ def create_bot() -> commands.Bot:
                     "Dit commando mag alleen in het ingestelde "
                     "receptenkanaal worden gebruikt."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
@@ -150,13 +153,13 @@ def create_bot() -> commands.Bot:
             await interaction.response.send_message(
                 "Dit commando mag alleen in het "
                 "ingestelde receptenkanaal worden gebruikt.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
 
         try:
@@ -170,21 +173,21 @@ def create_bot() -> commands.Bot:
                     "De zoekopdracht kon niet worden verwerkt. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe search request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
         if not results:
             await interaction.followup.send(
                 f"Geen recepten gevonden voor **{query}**.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
@@ -205,7 +208,7 @@ def create_bot() -> commands.Bot:
 
         await interaction.followup.send(
             embed=embed,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
 
     @recipe_group.command(
@@ -226,13 +229,13 @@ def create_bot() -> commands.Bot:
             await interaction.response.send_message(
                 "Dit commando mag alleen in het "
                 "ingestelde receptenkanaal worden gebruikt.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
         await interaction.response.defer(
             thinking=True,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
 
         try:
@@ -241,7 +244,7 @@ def create_bot() -> commands.Bot:
             if exc.response.status_code == 404:
                 await interaction.followup.send(
                     f"Geen recept gevonden met ID `{identifier}`.",
-                    ephemeral=True,
+                    ephemeral=EPHERMAL_RESPONSE,
                 )
                 return
 
@@ -250,14 +253,14 @@ def create_bot() -> commands.Bot:
                     "Het recept kon niet worden opgehaald. "
                     f"De API gaf status {exc.response.status_code}."
                 ),
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
         except httpx.HTTPError:
             logger.exception("Discord recipe detail request failed")
             await interaction.followup.send(
                 "De recepten-API is momenteel niet bereikbaar.",
-                ephemeral=True,
+                ephemeral=EPHERMAL_RESPONSE,
             )
             return
 
@@ -265,8 +268,30 @@ def create_bot() -> commands.Bot:
 
         await interaction.followup.send(
             embed=embed,
-            ephemeral=True,
+            ephemeral=EPHERMAL_RESPONSE,
         )
+
+    @show_recipe.autocomplete("identifier")
+    async def recipe_identifier_autocomplete(
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        try:
+            results = await api_client.search_recipes(
+                current,
+                limit=25,
+            )
+        except httpx.HTTPError:
+            logger.exception("Discord recipe autocomplete request failed")
+            return []
+
+        return [
+            app_commands.Choice(
+                name=result.title[:100],
+                value=Path(result.path).stem[:100],
+            )
+            for result in results
+        ]
 
     bot.tree.add_command(recipe_group)
 
