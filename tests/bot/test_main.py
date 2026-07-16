@@ -29,6 +29,17 @@ def test_create_bot_registers_recipe_group() -> None:
     assert text_command.name == "tekst"
 
 
+def test_import_commands_have_cooldown_and_error_handler() -> None:
+    bot = create_bot()
+    recipe_group = bot.tree.get_command("recept")
+
+    for command_name in ("import", "tekst", "upload"):
+        command = recipe_group.get_command(command_name)
+
+        assert len(command.checks) == 1
+        assert command.on_error is not None
+
+
 def test_delete_command_rejects_member_before_deferring(monkeypatch) -> None:
     settings = Settings(
         _env_file=None,

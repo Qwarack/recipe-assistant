@@ -9,6 +9,7 @@ from discord.ext import commands
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.attachments import validate_recipe_attachment
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
+from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
 from app.bot.views import RecipeDeleteView, RecipeImportView
 from app.core.config import get_settings
@@ -49,6 +50,11 @@ def create_bot() -> commands.Bot:
     )
     @app_commands.describe(
         url="URL van de receptenpagina",
+    )
+    @app_commands.checks.cooldown(
+        2,
+        60.0,
+        key=lambda interaction: interaction.user.id,
     )
     async def import_recipe(
         interaction: discord.Interaction,
@@ -116,9 +122,24 @@ def create_bot() -> commands.Bot:
 
         view.message = message
 
+    @import_recipe.error
+    async def import_recipe_error(
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await handle_app_command_error(
+            interaction,
+            error,
+        )
+
     @recipe_group.command(
         name="tekst",
         description="Importeer een handmatig geplakt recept",
+    )
+    @app_commands.checks.cooldown(
+        2,
+        60.0,
+        key=lambda interaction: interaction.user.id,
     )
     async def import_recipe_text(
         interaction: discord.Interaction,
@@ -142,6 +163,16 @@ def create_bot() -> commands.Bot:
         )
 
         await interaction.response.send_modal(modal)
+
+    @import_recipe_text.error
+    async def import_recipe_text_error(
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await handle_app_command_error(
+            interaction,
+            error,
+        )
 
     @recipe_group.command(
         name="zoek",
@@ -429,6 +460,11 @@ def create_bot() -> commands.Bot:
     @app_commands.describe(
         bestand="Markdown-, tekst- of HTML-bestand",
     )
+    @app_commands.checks.cooldown(
+        2,
+        60.0,
+        key=lambda interaction: interaction.user.id,
+    )
     async def upload_recipe(
         interaction: discord.Interaction,
         bestand: discord.Attachment,
@@ -519,6 +555,16 @@ def create_bot() -> commands.Bot:
         )
 
         view.message = message
+
+    @upload_recipe.error
+    async def upload_recipe_error(
+        interaction: discord.Interaction,
+        error: app_commands.AppCommandError,
+    ) -> None:
+        await handle_app_command_error(
+            interaction,
+            error,
+        )
 
     bot.tree.add_command(recipe_group)
 
