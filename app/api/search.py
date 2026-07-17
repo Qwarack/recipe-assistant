@@ -1,18 +1,23 @@
+from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
 from app.core.config import get_settings
+from app.database.engine import create_session_factory
+from app.database.repositories.recipe_repository import (
+    RecipeRepository,
+)
 from app.models.recipe_detail import RecipeDetail
 from app.models.recipe_search import RecipeSearchResult
+from app.services.database_recipe_search_service import (
+    DatabaseRecipeSearchService,
+)
 from app.services.recipe_delete_service import (
     RecipeDeleteService,
 )
 from app.services.recipe_detail_service import (
     RecipeDetailService,
-)
-from app.services.recipe_search_service import (
-    RecipeSearchService,
 )
 
 router = APIRouter(
@@ -27,10 +32,19 @@ def create_recipe_delete_service() -> RecipeDeleteService:
     return RecipeDeleteService(recipes_path=settings.recipes_path)
 
 
-def create_recipe_search_service() -> RecipeSearchService:
+def create_recipe_search_service() -> Generator[
+    DatabaseRecipeSearchService,
+    None,
+    None,
+]:
     settings = get_settings()
 
-    return RecipeSearchService(recipes_path=settings.recipes_path)
+    session_factory = create_session_factory(settings.database_path)
+
+    with session_factory() as session:
+        repository = RecipeRepository(session)
+
+        yield DatabaseRecipeSearchService(repository=repository)
 
 
 @router.get(
@@ -39,7 +53,7 @@ def create_recipe_search_service() -> RecipeSearchService:
 )
 def search_recipes(
     service: Annotated[
-        RecipeSearchService,
+        DatabaseRecipeSearchService,
         Depends(create_recipe_search_service),
     ],
     query: str = Query(
