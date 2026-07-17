@@ -59,6 +59,7 @@ class RecipeSearchService:
         source_url = metadata.get("source_url")
 
         return RecipeSearchResult(
+            identifier=recipe_path.stem,
             title=title,
             path=str(recipe_path),
             source_url=source_url,

@@ -48,6 +48,7 @@ def test_search_returns_database_recipes(
         results = service.search("pasta")
 
         assert len(results) == 1
+        assert results[0].identifier == "pasta-carbonara"
         assert results[0].title == "Pasta Carbonara"
         assert results[0].path == ("data/recipes/pasta-carbonara.md")
         assert str(results[0].source_url) == ("https://example.com/carbonara")

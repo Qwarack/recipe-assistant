@@ -23,11 +23,47 @@ class WeekCommands(commands.Cog):
         description="Beheer de weekplanning",
     )
 
+    MEAL_TYPE_CHOICES = [
+        app_commands.Choice(
+            name="Ontbijt",
+            value="breakfast",
+        ),
+        app_commands.Choice(
+            name="Lunch",
+            value="lunch",
+        ),
+        app_commands.Choice(
+            name="Avondeten",
+            value="dinner",
+        ),
+    ]
+
     def __init__(
         self,
         api_client: RecipeApiClient,
     ) -> None:
         self.api_client = api_client
+
+    async def recipe_autocomplete(
+        self,
+        interaction: discord.Interaction,
+        current: str,
+    ) -> list[app_commands.Choice[str]]:
+        if not current.strip():
+            return []
+
+        results = await self.api_client.search_recipes(
+            current,
+            limit=25,
+        )
+
+        return [
+            app_commands.Choice(
+                name=recipe.title[:100],
+                value=recipe.identifier,
+            )
+            for recipe in results[:25]
+        ]
 
     @week.command(
         name="toon",
@@ -84,6 +120,12 @@ class WeekCommands(commands.Cog):
         porties="Aantal porties",
         maaltijd="Bijvoorbeeld dinner, lunch of breakfast",
         notitie="Optionele notitie",
+    )
+    @app_commands.autocomplete(
+        recept_id=recipe_autocomplete,
+    )
+    @app_commands.choices(
+        maaltijd=MEAL_TYPE_CHOICES,
     )
     async def plan_recipe(
         self,

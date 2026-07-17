@@ -1,5 +1,4 @@
 import logging
-from pathlib import Path
 
 import discord
 import httpx
@@ -314,7 +313,7 @@ def create_bot() -> commands.Bot:
         return [
             app_commands.Choice(
                 name=result.title[:100],
-                value=Path(result.path).stem[:100],
+                value=result.identifier[:100],
             )
             for result in results
         ]
@@ -417,7 +416,7 @@ def create_bot() -> commands.Bot:
         return [
             app_commands.Choice(
                 name=result.title[:100],
-                value=Path(result.path).stem[:100],
+                value=result.identifier[:100],
             )
             for result in results
         ]

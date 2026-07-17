@@ -24,6 +24,7 @@ class DatabaseRecipeSearchService:
 
         return [
             RecipeSearchResult(
+                identifier=record.identifier,
                 title=record.title,
                 path=record.file_path,
                 source_url=record.source_url,

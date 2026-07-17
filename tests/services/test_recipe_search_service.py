@@ -30,6 +30,7 @@ source_url: https://example.com/carbonara
     results = service.search("carbonara")
 
     assert len(results) == 1
+    assert results[0].identifier == "pasta-carbonara"
     assert results[0].title == "Pasta Carbonara"
     assert results[0].path == str(recipe_path)
     assert str(results[0].source_url) == ("https://example.com/carbonara")

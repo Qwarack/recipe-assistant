@@ -58,6 +58,7 @@ def test_search_recipes_endpoint(
     body = response.json()
 
     assert len(body) == 1
+    assert body[0]["identifier"] == "pasta-carbonara"
     assert body[0]["title"] == "Pasta Carbonara"
     assert body[0]["path"] == "data/recipes/pasta-carbonara.md"
     assert body[0]["source_url"] == ("https://example.com/carbonara")

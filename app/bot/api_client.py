@@ -90,6 +90,7 @@ def _parse_import_response(
 
 @dataclass(slots=True)
 class RecipeSearchResult:
+    identifier: str
     title: str
     path: str
     source_url: str | None
@@ -205,7 +206,10 @@ class RecipeApiClient:
     ) -> list[RecipeSearchResult]:
         endpoint = f"{self.base_url}/recipes/search"
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
             response = await client.get(
                 endpoint,
                 params={
@@ -220,6 +224,7 @@ class RecipeApiClient:
 
         return [
             RecipeSearchResult(
+                identifier=item["identifier"],
                 title=item["title"],
                 path=item["path"],
                 source_url=item.get("source_url"),
