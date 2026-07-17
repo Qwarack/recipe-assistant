@@ -2,7 +2,7 @@
 
 Self-hosted receptenimporter voor een homelabomgeving. De applicatie zet recepten uit verschillende bronnen om naar een gevalideerd `Recipe`-model en slaat ze op als consistente Markdown-bestanden met YAML-frontmatter.
 
-De huidige versie vormt **fase 1 en 2** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer.
+De huidige versie omvat **fase 1, 2 en 3** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Fase 3 maakt handmatig plannen, bekijken, wijzigen en verwijderen van recepten mogelijk.
 
 ## Huidige functionaliteit
 
@@ -23,6 +23,7 @@ De applicatie ondersteunt momenteel:
 - Optionele opslag van ruwe HTML bij mislukte imports.
 - FastAPI-endpoint voor website-imports.
 - Unit-, snapshot-, fixture- en integratietests.
+- Handmatige weekplanning via de API en Discord, standaard van woensdag t/m dinsdag.
 
 ## Architectuur
 
@@ -117,6 +118,7 @@ Voorbeeld `.env`:
 ```env
 RECIPES_PATH=/data/recipes
 IMPORTS_PATH=/data/imports
+APP_TIMEZONE=Europe/Amsterdam
 ```
 
 Bij lokaal draaien zonder Docker kunnen deze paden bijvoorbeeld worden aangepast naar:
@@ -129,6 +131,49 @@ IMPORTS_PATH=./data/imports
 `RECIPES_PATH` bevat de gegenereerde Markdown-recepten.
 
 `IMPORTS_PATH` bevat optioneel ruwe HTML van mislukte website-imports voor debugging.
+
+`APP_TIMEZONE` bepaalt welke lokale kalenderdatum voor de actuele planning wordt gebruikt. De standaard is `Europe/Amsterdam`.
+
+## Weekplanning (fase 3)
+
+Alle datums gebruiken het formaat `JJJJ-MM-DD`. Een planning omvat zeven dagen. Wanneer `/week plan` geen startdatum krijgt, berekent de bot de meest recente woensdag vanaf de gekozen eetdatum; zo loopt de standaardperiode van woensdag t/m dinsdag. Een expliciete startdatum blijft mogelijk.
+
+Beschikbare Discord-commando's:
+
+- `/week toon [startdatum]`: toont de actuele planning, met fallback naar de nieuwste planning, of een expliciete planning.
+- `/week plan`: plant een recept in; het receptveld heeft autocomplete en het maaltijdtype vaste keuzes.
+- `/week wijzig`: wijzigt datum, maaltijdtype, porties of notitie van een entry. Gebruik `-` als notitie om die te wissen.
+- `/week verwijder`: verwijdert een entry. Het benodigde entry-ID staat in `/week toon`.
+
+Na toevoegen, wijzigen of verwijderen toont Discord direct de bijgewerkte planning.
+
+### Meal-plan-API
+
+```bash
+curl http://127.0.0.1:8000/meal-plans/current
+```
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/meal-plans/2026-07-15/entries \
+  -H "Content-Type: application/json" \
+  -d '{
+    "planned_date": "2026-07-18",
+    "recipe_identifier": "pasta-carbonara",
+    "meal_type": "dinner",
+    "servings": 3
+  }'
+```
+
+```bash
+curl -X PATCH \
+  http://127.0.0.1:8000/meal-plans/2026-07-15/entries/42 \
+  -H "Content-Type: application/json" \
+  -d '{"servings": 4, "notes": null}'
+
+curl -X DELETE \
+  http://127.0.0.1:8000/meal-plans/2026-07-15/entries/42
+```
 
 ## Applicatie lokaal starten
 
@@ -355,7 +400,7 @@ uv run python -m pytest
 Ruff linting:
 
 ```bash
-uv run ruff check app tests
+uv run ruff check app tests alembic
 ```
 
 Formatting:
@@ -367,7 +412,7 @@ uv run ruff format app tests
 Alle controles achter elkaar:
 
 ```bash
-uv run ruff check app tests
+uv run ruff check app tests alembic
 uv run ruff format app tests
 uv run python -m pytest
 ```
@@ -393,7 +438,7 @@ De testsuite bevat onder andere:
 Aanbevolen workflow na een wijziging:
 
 ```bash
-uv run ruff check app tests
+uv run ruff check app tests alembic
 uv run ruff format app tests
 uv run python -m pytest
 ```
@@ -421,7 +466,7 @@ De website-importer leest geen `file://`-URL's. Lokale bestanden worden uitsluit
 
 ## Huidige projectfase
 
-Fase 1 is functioneel compleet voor de huidige scope:
+Fase 1 t/m 3 zijn functioneel compleet voor de huidige scope:
 
 - Website-import.
 - Fallbackextractie.
@@ -431,21 +476,8 @@ Fase 1 is functioneel compleet voor de huidige scope:
 - Lokale HTML-, Markdown- en tekstimport.
 - Debugopslag.
 - Tests en integratiechecks.
-
-## Volgende fase
-
-Fase 2 voegt Discord als primaire invoerinterface toe.
-
-Geplande onderdelen:
-
-- Discord-bot met `discord.py`.
-- Slash command voor een recepten-URL.
-- Automatische verwerking van links in een toegestaan kanaal.
-- Preview van een geïmporteerd recept.
-- Knoppen voor opslaan, aanpassen en annuleren.
-- Status opvragen via import-ID.
-- Permission checks en rate limiting.
-- API en bot als afzonderlijke containers of processen.
+- Discord als primaire invoerinterface.
+- Handmatige weekplanning met toevoegen, tonen, wijzigen en verwijderen.
 
 ## Langetermijndoel
 

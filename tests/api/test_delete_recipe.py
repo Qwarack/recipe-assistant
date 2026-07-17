@@ -1,9 +1,11 @@
 from pathlib import Path
+from unittest.mock import MagicMock
 
 from app.api import search as search_api
 from app.main import app
 from app.services.recipe_delete_service import (
     RecipeDeleteService,
+    RecipeInUseError,
 )
 from fastapi.testclient import TestClient
 
@@ -48,3 +50,22 @@ def test_delete_recipe_endpoint_returns_404_when_missing(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Recipe not found"}
+
+
+def test_delete_recipe_endpoint_returns_409_when_recipe_is_planned(
+    tmp_path: Path,
+) -> None:
+    service = RecipeDeleteService(recipes_path=tmp_path)
+    service.delete_by_identifier = MagicMock(
+        side_effect=RecipeInUseError("pasta-carbonara")
+    )
+    app.dependency_overrides[search_api.create_recipe_delete_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            response = client.delete("/recipes/pasta-carbonara")
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 409
+    assert response.json() == {"detail": "Recipe is used by a meal plan"}

@@ -2,9 +2,10 @@ from collections.abc import Generator
 from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
+from sqlalchemy.orm import Session
 
+from app.api.dependencies import get_database_session
 from app.core.config import get_settings
-from app.database.engine import create_session_factory
 from app.database.repositories.recipe_repository import (
     RecipeRepository,
 )
@@ -15,6 +16,7 @@ from app.services.database_recipe_search_service import (
 )
 from app.services.recipe_delete_service import (
     RecipeDeleteService,
+    RecipeInUseError,
 )
 from app.services.recipe_detail_service import (
     RecipeDetailService,
@@ -26,34 +28,29 @@ router = APIRouter(
 )
 
 
-def create_recipe_delete_service() -> Generator[
+def create_recipe_delete_service(
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Generator[
     RecipeDeleteService,
     None,
     None,
 ]:
     settings = get_settings()
-    session_factory = create_session_factory(settings.database_path)
-
-    with session_factory() as session:
-        yield RecipeDeleteService(
-            recipes_path=settings.recipes_path,
-            session=session,
-        )
+    yield RecipeDeleteService(
+        recipes_path=settings.recipes_path,
+        session=session,
+    )
 
 
-def create_recipe_search_service() -> Generator[
+def create_recipe_search_service(
+    session: Annotated[Session, Depends(get_database_session)],
+) -> Generator[
     DatabaseRecipeSearchService,
     None,
     None,
 ]:
-    settings = get_settings()
-
-    session_factory = create_session_factory(settings.database_path)
-
-    with session_factory() as session:
-        repository = RecipeRepository(session)
-
-        yield DatabaseRecipeSearchService(repository=repository)
+    repository = RecipeRepository(session)
+    yield DatabaseRecipeSearchService(repository=repository)
 
 
 @router.get(
@@ -120,7 +117,13 @@ def delete_recipe(
         Depends(create_recipe_delete_service),
     ],
 ) -> None:
-    deleted = service.delete_by_identifier(identifier)
+    try:
+        deleted = service.delete_by_identifier(identifier)
+    except RecipeInUseError as exc:
+        raise HTTPException(
+            status_code=status.HTTP_409_CONFLICT,
+            detail="Recipe is used by a meal plan",
+        ) from exc
 
     if not deleted:
         raise HTTPException(

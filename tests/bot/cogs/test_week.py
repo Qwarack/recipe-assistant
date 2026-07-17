@@ -2,29 +2,19 @@ import asyncio
 from datetime import date
 from unittest.mock import AsyncMock, MagicMock
 
-from app.bot.api_client import RecipeSearchResult
+from app.bot.api_client import MealPlan, RecipeSearchResult
 from app.bot.cogs.week import (
     WeekCommands,
     get_planning_start_date,
 )
 
 
-def test_planning_start_date_on_wednesday() -> None:
-    result = get_planning_start_date(date(2026, 7, 15))
+def test_planning_start_date_for_every_weekday() -> None:
+    expected_start = date(2026, 7, 15)
 
-    assert result == date(2026, 7, 15)
-
-
-def test_planning_start_date_on_saturday() -> None:
-    result = get_planning_start_date(date(2026, 7, 18))
-
-    assert result == date(2026, 7, 15)
-
-
-def test_planning_start_date_on_monday() -> None:
-    result = get_planning_start_date(date(2026, 7, 20))
-
-    assert result == date(2026, 7, 15)
+    for day_offset in range(7):
+        target_date = date(2026, 7, 15 + day_offset)
+        assert get_planning_start_date(target_date) == expected_start
 
 
 def test_recipe_autocomplete_returns_at_most_25_choices() -> None:
@@ -72,3 +62,55 @@ def test_recipe_autocomplete_skips_blank_query() -> None:
 
     assert choices == []
     api_client.search_recipes.assert_not_awaited()
+
+
+def test_update_entry_requires_at_least_one_change() -> None:
+    api_client = MagicMock()
+    cog = WeekCommands(api_client)
+    interaction = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    asyncio.run(
+        WeekCommands.update_entry.callback(
+            cog,
+            interaction,
+            entry_id=7,
+        )
+    )
+
+    api_client.update_meal_plan_entry.assert_not_called()
+    interaction.followup.send.assert_awaited_once_with(
+        "Geef minstens één wijziging op.",
+        ephemeral=True,
+    )
+
+
+def test_remove_entry_uses_current_plan_when_start_date_is_omitted() -> None:
+    plan = MealPlan(
+        id=10,
+        start_date=date(2026, 7, 15),
+        end_date=date(2026, 7, 21),
+        name=None,
+        entries=[],
+    )
+    api_client = MagicMock()
+    api_client.get_current_meal_plan = AsyncMock(return_value=plan)
+    api_client.remove_meal_plan_entry = AsyncMock(return_value=plan)
+    cog = WeekCommands(api_client)
+    interaction = MagicMock()
+    interaction.response.defer = AsyncMock()
+    interaction.followup.send = AsyncMock()
+
+    asyncio.run(
+        WeekCommands.remove_entry.callback(
+            cog,
+            interaction,
+            entry_id=7,
+        )
+    )
+
+    api_client.remove_meal_plan_entry.assert_awaited_once_with(
+        start_date=date(2026, 7, 15),
+        entry_id=7,
+    )

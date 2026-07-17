@@ -17,6 +17,7 @@ from app.services.meal_plan_service import (
     MealPlanService,
 )
 from fastapi.testclient import TestClient
+from sqlalchemy.orm import Session
 
 
 def test_get_meal_plan_endpoint(
@@ -117,15 +118,10 @@ def test_get_current_meal_plan_endpoint(
 
     app.dependency_overrides[meal_plans_api.create_meal_plan_service] = lambda: service
 
-    class FixedDate(date):
-        @classmethod
-        def today(cls) -> date:
-            return cls(2026, 7, 18)
-
     monkeypatch.setattr(
         meal_plans_api,
-        "date",
-        FixedDate,
+        "get_local_today",
+        lambda: date(2026, 7, 18),
     )
 
     try:
@@ -272,3 +268,117 @@ def test_add_meal_plan_entry_endpoint_rejects_duplicate_slot(
     assert first_response.status_code == 201
     assert second_response.status_code == 409
     assert second_response.json() == {"detail": "This meal slot is already planned"}
+
+
+def _create_service_with_recipes(tmp_path: Path) -> tuple[Session, MealPlanService]:
+    session_factory = create_session_factory(tmp_path / "app.db")
+    Base.metadata.create_all(session_factory.kw["bind"])
+    session = session_factory()
+    session.add_all(
+        [
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+            ),
+            RecipeRecord(
+                identifier="tomatensoep",
+                title="Tomatensoep",
+                file_path="data/recipes/tomatensoep.md",
+            ),
+        ]
+    )
+    session.commit()
+    return session, MealPlanService(session)
+
+
+def test_update_and_delete_meal_plan_entry_endpoints(
+    tmp_path: Path,
+) -> None:
+    session, service = _create_service_with_recipes(tmp_path)
+    entry = service.add_recipe(
+        start_date=date(2026, 7, 15),
+        planned_date=date(2026, 7, 17),
+        recipe_identifier="pasta-carbonara",
+        notes="Extra kaas",
+    )
+    app.dependency_overrides[meal_plans_api.create_meal_plan_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            update_response = client.patch(
+                f"/meal-plans/2026-07-15/entries/{entry.id}",
+                json={
+                    "planned_date": "2026-07-18",
+                    "meal_type": "lunch",
+                    "servings": 4,
+                    "notes": None,
+                },
+            )
+            delete_response = client.delete(
+                f"/meal-plans/2026-07-15/entries/{entry.id}"
+            )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+    assert update_response.status_code == 200
+    updated_entry = update_response.json()["entries"][0]
+    assert updated_entry["planned_date"] == "2026-07-18"
+    assert updated_entry["meal_type"] == "lunch"
+    assert updated_entry["servings"] == 4
+    assert updated_entry["notes"] is None
+    assert delete_response.status_code == 200
+    assert delete_response.json()["entries"] == []
+
+
+def test_meal_plan_endpoints_map_domain_errors(
+    tmp_path: Path,
+) -> None:
+    session, service = _create_service_with_recipes(tmp_path)
+    first = service.add_recipe(
+        start_date=date(2026, 7, 15),
+        planned_date=date(2026, 7, 17),
+        recipe_identifier="pasta-carbonara",
+    )
+    service.add_recipe(
+        start_date=date(2026, 7, 15),
+        planned_date=date(2026, 7, 18),
+        recipe_identifier="tomatensoep",
+    )
+    app.dependency_overrides[meal_plans_api.create_meal_plan_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            not_found = client.delete("/meal-plans/2026-07-15/entries/999")
+            occupied = client.patch(
+                f"/meal-plans/2026-07-15/entries/{first.id}",
+                json={"planned_date": "2026-07-18"},
+            )
+            empty_update = client.patch(
+                f"/meal-plans/2026-07-15/entries/{first.id}",
+                json={},
+            )
+            outside_range = client.post(
+                "/meal-plans/2026-07-15/entries",
+                json={
+                    "planned_date": "2026-07-22",
+                    "recipe_identifier": "pasta-carbonara",
+                },
+            )
+            unknown_recipe = client.post(
+                "/meal-plans/2026-07-15/entries",
+                json={
+                    "planned_date": "2026-07-19",
+                    "recipe_identifier": "onbekend",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+    assert not_found.status_code == 404
+    assert occupied.status_code == 409
+    assert empty_update.status_code == 422
+    assert outside_range.status_code == 422
+    assert unknown_recipe.status_code == 404

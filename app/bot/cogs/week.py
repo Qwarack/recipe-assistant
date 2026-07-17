@@ -1,3 +1,4 @@
+import logging
 from datetime import date, timedelta
 
 import discord
@@ -7,6 +8,9 @@ from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient
 from app.bot.embeds import build_meal_plan_embed
+from app.bot.meal_plan_errors import get_meal_plan_error_message
+
+logger = logging.getLogger(__name__)
 
 
 def get_planning_start_date(
@@ -43,6 +47,17 @@ class WeekCommands(commands.Cog):
         api_client: RecipeApiClient,
     ) -> None:
         self.api_client = api_client
+
+    async def _send_api_error(
+        self,
+        interaction: discord.Interaction,
+        exc: httpx.HTTPError,
+    ) -> None:
+        logger.warning("Meal-plan API request failed", exc_info=exc)
+        await interaction.followup.send(
+            get_meal_plan_error_message(exc),
+            ephemeral=True,
+        )
 
     async def recipe_autocomplete(
         self,
@@ -95,15 +110,9 @@ class WeekCommands(commands.Cog):
                 ephemeral=True,
             )
             return
-        except httpx.HTTPStatusError as exc:
-            if exc.response.status_code == 404:
-                await interaction.followup.send(
-                    "Er is geen weekplanning gevonden.",
-                    ephemeral=True,
-                )
-                return
-
-            raise
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
+            return
 
         embed = build_meal_plan_embed(meal_plan)
 
@@ -167,28 +176,8 @@ class WeekCommands(commands.Cog):
                 servings=porties,
                 notes=notitie,
             )
-        except httpx.HTTPStatusError as exc:
-            status_code = exc.response.status_code
-
-            try:
-                detail = exc.response.json().get(
-                    "detail",
-                    "Onbekende fout",
-                )
-            except ValueError:
-                detail = "Onbekende fout"
-
-            if status_code == 404:
-                message = f"Het recept `{recept_id}` is niet gevonden."
-            elif status_code == 409:
-                message = f"Het recept kon niet worden ingepland: {detail}"
-            else:
-                raise
-
-            await interaction.followup.send(
-                message,
-                ephemeral=True,
-            )
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
             return
 
         embed = build_meal_plan_embed(meal_plan)
@@ -196,5 +185,113 @@ class WeekCommands(commands.Cog):
         await interaction.followup.send(
             content=(f"`{recept_id}` is ingepland voor {parsed_date:%d-%m-%Y}."),
             embed=embed,
+            ephemeral=True,
+        )
+
+    @week.command(
+        name="wijzig",
+        description="Wijzig een ingepland recept",
+    )
+    @app_commands.describe(
+        entry_id="Het entry-ID uit /week toon",
+        datum="Optionele nieuwe datum in formaat JJJJ-MM-DD",
+        startdatum="Optionele startdatum in formaat JJJJ-MM-DD",
+        porties="Optioneel nieuw aantal porties",
+        maaltijd="Optioneel nieuw maaltijdtype",
+        notitie="Optionele notitie; gebruik - om deze te wissen",
+    )
+    @app_commands.choices(maaltijd=MEAL_TYPE_CHOICES)
+    async def update_entry(
+        self,
+        interaction: discord.Interaction,
+        entry_id: int,
+        datum: str | None = None,
+        startdatum: str | None = None,
+        porties: app_commands.Range[int, 1, 50] | None = None,
+        maaltijd: str | None = None,
+        notitie: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        if all(value is None for value in (datum, porties, maaltijd, notitie)):
+            await interaction.followup.send(
+                "Geef minstens één wijziging op.",
+                ephemeral=True,
+            )
+            return
+
+        try:
+            parsed_date = date.fromisoformat(datum) if datum is not None else None
+            if startdatum is None:
+                current_plan = await self.api_client.get_current_meal_plan()
+                parsed_start_date = current_plan.start_date
+            else:
+                parsed_start_date = date.fromisoformat(startdatum)
+
+            meal_plan = await self.api_client.update_meal_plan_entry(
+                start_date=parsed_start_date,
+                entry_id=entry_id,
+                planned_date=parsed_date,
+                meal_type=maaltijd,
+                servings=porties,
+                notes=None if notitie == "-" else notitie,
+                update_notes=notitie is not None,
+            )
+        except ValueError:
+            await interaction.followup.send(
+                "Een datum is ongeldig. Gebruik `JJJJ-MM-DD`.",
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
+            return
+
+        await interaction.followup.send(
+            content=f"Planning-entry `{entry_id}` is gewijzigd.",
+            embed=build_meal_plan_embed(meal_plan),
+            ephemeral=True,
+        )
+
+    @week.command(
+        name="verwijder",
+        description="Verwijder een ingepland recept",
+    )
+    @app_commands.describe(
+        entry_id="Het entry-ID uit /week toon",
+        startdatum="Optionele startdatum in formaat JJJJ-MM-DD",
+    )
+    async def remove_entry(
+        self,
+        interaction: discord.Interaction,
+        entry_id: int,
+        startdatum: str | None = None,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+
+        try:
+            if startdatum is None:
+                current_plan = await self.api_client.get_current_meal_plan()
+                parsed_start_date = current_plan.start_date
+            else:
+                parsed_start_date = date.fromisoformat(startdatum)
+
+            meal_plan = await self.api_client.remove_meal_plan_entry(
+                start_date=parsed_start_date,
+                entry_id=entry_id,
+            )
+        except ValueError:
+            await interaction.followup.send(
+                "De startdatum is ongeldig. Gebruik `JJJJ-MM-DD`.",
+                ephemeral=True,
+            )
+            return
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
+            return
+
+        await interaction.followup.send(
+            content=f"Planning-entry `{entry_id}` is verwijderd.",
+            embed=build_meal_plan_embed(meal_plan),
             ephemeral=True,
         )

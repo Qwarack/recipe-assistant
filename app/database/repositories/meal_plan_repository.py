@@ -92,3 +92,39 @@ class MealPlanRepository:
         )
 
         return self.add(meal_plan)
+
+    def get_entry_by_id(
+        self,
+        entry_id: int,
+    ) -> MealPlanEntryRecord | None:
+        return self.session.get(
+            MealPlanEntryRecord,
+            entry_id,
+        )
+
+    def get_entry_by_slot(
+        self,
+        *,
+        meal_plan_id: int,
+        planned_date: date,
+        meal_type: str,
+        exclude_entry_id: int | None = None,
+    ) -> MealPlanEntryRecord | None:
+        statement = select(MealPlanEntryRecord).where(
+            MealPlanEntryRecord.meal_plan_id == meal_plan_id,
+            MealPlanEntryRecord.planned_date == planned_date,
+            MealPlanEntryRecord.meal_type == meal_type,
+        )
+
+        if exclude_entry_id is not None:
+            statement = statement.where(
+                MealPlanEntryRecord.id != exclude_entry_id,
+            )
+
+        return self.session.scalar(statement)
+
+    def delete_entry(
+        self,
+        entry: MealPlanEntryRecord,
+    ) -> None:
+        self.session.delete(entry)

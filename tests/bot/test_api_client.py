@@ -265,3 +265,72 @@ def test_get_current_meal_plan() -> None:
     assert result.name == "Huidige planning"
     assert result.start_date == date(2026, 7, 15)
     assert result.entries[0].recipe_title == "Pasta Carbonara"
+
+
+def test_update_meal_plan_entry_uses_patch_and_only_changed_fields() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "PATCH"
+        assert request.url == "http://api.test/meal-plans/2026-07-15/entries/7"
+        assert json.loads(request.content) == {
+            "planned_date": "2026-07-18",
+            "servings": 4,
+            "notes": None,
+        }
+        return httpx.Response(
+            200,
+            json={
+                "id": 10,
+                "start_date": "2026-07-15",
+                "end_date": "2026-07-21",
+                "name": None,
+                "entries": [],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.update_meal_plan_entry(
+            start_date=date(2026, 7, 15),
+            entry_id=7,
+            planned_date=date(2026, 7, 18),
+            servings=4,
+            notes=None,
+            update_notes=True,
+        )
+    )
+
+    assert result.id == 10
+
+
+def test_remove_meal_plan_entry_uses_delete() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "DELETE"
+        assert request.url == "http://api.test/meal-plans/2026-07-15/entries/7"
+        return httpx.Response(
+            200,
+            json={
+                "id": 10,
+                "start_date": "2026-07-15",
+                "end_date": "2026-07-21",
+                "name": None,
+                "entries": [],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.remove_meal_plan_entry(
+            start_date=date(2026, 7, 15),
+            entry_id=7,
+        )
+    )
+
+    assert result.entries == []

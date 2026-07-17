@@ -17,3 +17,9 @@ def test_allowed_discord_role_ids_is_empty_when_not_configured() -> None:
     )
 
     assert settings.allowed_discord_role_ids == set()
+
+
+def test_default_application_timezone_is_amsterdam() -> None:
+    settings = Settings(_env_file=None)
+
+    assert settings.app_timezone == "Europe/Amsterdam"

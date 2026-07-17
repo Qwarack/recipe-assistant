@@ -3,6 +3,22 @@ import discord
 from app.bot.api_client import MealPlan, RecipeDetail, RecipeImportResponse
 from app.bot.text_utils import split_text
 
+DUTCH_WEEKDAYS = {
+    0: "Maandag",
+    1: "Dinsdag",
+    2: "Woensdag",
+    3: "Donderdag",
+    4: "Vrijdag",
+    5: "Zaterdag",
+    6: "Zondag",
+}
+
+
+def _truncate(value: str, limit: int) -> str:
+    if len(value) <= limit:
+        return value
+    return f"{value[: limit - 1]}…"
+
 
 def build_recipe_import_embed(
     result: RecipeImportResponse,
@@ -202,6 +218,7 @@ def build_meal_plan_embed(
             value="Er zijn nog geen recepten ingepland.",
             inline=False,
         )
+        embed.set_footer(text=f"Planning-ID: {meal_plan.id}")
         return embed
 
     sorted_entries = sorted(
@@ -212,21 +229,21 @@ def build_meal_plan_embed(
         ),
     )
 
-    for entry in sorted_entries:
-        field_name = f"{entry.planned_date:%A %d-%m} · {entry.meal_type}"
+    for entry in sorted_entries[:25]:
+        weekday = DUTCH_WEEKDAYS[entry.planned_date.weekday()]
+        field_name = f"{weekday} {entry.planned_date:%d-%m} · {entry.meal_type}"
 
         field_value = (
-            f"**{entry.recipe_title}**\n"
+            f"**{_truncate(entry.recipe_title, 48)}**\n"
             f"Porties: {entry.servings}\n"
-            f"Recept-ID: `{entry.recipe_identifier}`"
+            f"Notitie: {_truncate(entry.notes or '—', 60)}\n"
+            f"Entry-ID: `{entry.id}`\n"
+            f"Recept-ID: `{_truncate(entry.recipe_identifier, 64)}`"
         )
 
-        if entry.notes:
-            field_value += f"\nNotitie: {entry.notes}"
-
         embed.add_field(
-            name=field_name,
-            value=field_value,
+            name=_truncate(field_name, 256),
+            value=_truncate(field_value, 240),
             inline=False,
         )
 

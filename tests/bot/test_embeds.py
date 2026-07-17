@@ -201,6 +201,9 @@ def test_builds_meal_plan_embed() -> None:
     assert len(embed.fields) == 2
     assert "Tomatensoep" in embed.fields[0].value
     assert "Pasta Carbonara" in embed.fields[1].value
+    assert embed.fields[0].name.startswith("Woensdag")
+    assert "Entry-ID: `2`" in embed.fields[0].value
+    assert "Recept-ID: `tomatensoep`" in embed.fields[0].value
     assert embed.footer.text == "Planning-ID: 10"
 
 
@@ -218,3 +221,4 @@ def test_meal_plan_embed_handles_empty_plan() -> None:
     assert embed.title == "Weekplanning"
     assert len(embed.fields) == 1
     assert embed.fields[0].value == "Er zijn nog geen recepten ingepland."
+    assert embed.footer.text == "Planning-ID: 10"

@@ -33,3 +33,14 @@ def test_session_factory_creates_working_session(
         result = session.execute(text("SELECT 1"))
 
         assert result.scalar_one() == 1
+
+
+def test_sqlite_foreign_keys_are_enabled(
+    tmp_path: Path,
+) -> None:
+    engine = create_sqlite_engine(tmp_path / "app.db")
+
+    with engine.connect() as connection:
+        enabled = connection.execute(text("PRAGMA foreign_keys")).scalar_one()
+
+    assert enabled == 1

@@ -1,13 +1,18 @@
+from datetime import date
 from pathlib import Path
 
+import pytest
 from app.database.base import Base
 from app.database.engine import create_session_factory
+from app.database.models.meal_plan import MealPlanRecord
+from app.database.models.meal_plan_entry import MealPlanEntryRecord
 from app.database.models.recipe import RecipeRecord
 from app.database.repositories.recipe_repository import (
     RecipeRepository,
 )
 from app.services.recipe_delete_service import (
     RecipeDeleteService,
+    RecipeInUseError,
 )
 
 
@@ -95,3 +100,37 @@ def test_delete_removes_file_and_database_record(
         assert deleted is True
         assert recipe_path.exists() is False
         assert repository.get_by_identifier("pasta-carbonara") is None
+
+
+def test_delete_keeps_planned_recipe_file_and_record(
+    tmp_path: Path,
+) -> None:
+    recipe_path = tmp_path / "pasta-carbonara.md"
+    recipe_path.write_text("# Pasta Carbonara\n", encoding="utf-8")
+    session_factory = create_session_factory(tmp_path / "app.db")
+    Base.metadata.create_all(session_factory.kw["bind"])
+
+    with session_factory() as session:
+        recipe = RecipeRecord(
+            identifier="pasta-carbonara",
+            title="Pasta Carbonara",
+            file_path=str(recipe_path),
+        )
+        session.add(
+            MealPlanEntryRecord(
+                meal_plan=MealPlanRecord(start_date=date(2026, 7, 15)),
+                recipe=recipe,
+                planned_date=date(2026, 7, 17),
+                meal_type="dinner",
+                servings=2,
+            )
+        )
+        session.commit()
+        service = RecipeDeleteService(recipes_path=tmp_path, session=session)
+
+        with pytest.raises(RecipeInUseError):
+            service.delete_by_identifier("pasta-carbonara")
+
+        assert recipe_path.exists()
+        stored_recipe = RecipeRepository(session).get_by_identifier("pasta-carbonara")
+        assert stored_recipe is not None

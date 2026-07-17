@@ -238,7 +238,10 @@ class RecipeApiClient:
     ) -> RecipeDetail:
         endpoint = f"{self.base_url}/recipes/{identifier}"
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
             response = await client.get(endpoint)
 
         response.raise_for_status()
@@ -340,7 +343,10 @@ class RecipeApiClient:
     ) -> MealPlan:
         endpoint = f"{self.base_url}/meal-plans/{start_date.isoformat()}"
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
             response = await client.get(endpoint)
 
         response.raise_for_status()
@@ -384,7 +390,10 @@ class RecipeApiClient:
             "plan_name": plan_name,
         }
 
-        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
             response = await client.post(
                 endpoint,
                 json=response_payload,
@@ -392,6 +401,57 @@ class RecipeApiClient:
 
         response.raise_for_status()
 
+        return _parse_meal_plan(response.json())
+
+    async def update_meal_plan_entry(
+        self,
+        *,
+        start_date: date,
+        entry_id: int,
+        planned_date: date | None = None,
+        meal_type: str | None = None,
+        servings: int | None = None,
+        notes: str | None = None,
+        update_notes: bool = False,
+    ) -> MealPlan:
+        endpoint = (
+            f"{self.base_url}/meal-plans/{start_date.isoformat()}/entries/{entry_id}"
+        )
+        payload: dict[str, Any] = {}
+        if planned_date is not None:
+            payload["planned_date"] = planned_date.isoformat()
+        if meal_type is not None:
+            payload["meal_type"] = meal_type
+        if servings is not None:
+            payload["servings"] = servings
+        if update_notes:
+            payload["notes"] = notes
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.patch(endpoint, json=payload)
+
+        response.raise_for_status()
+        return _parse_meal_plan(response.json())
+
+    async def remove_meal_plan_entry(
+        self,
+        *,
+        start_date: date,
+        entry_id: int,
+    ) -> MealPlan:
+        endpoint = (
+            f"{self.base_url}/meal-plans/{start_date.isoformat()}/entries/{entry_id}"
+        )
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.delete(endpoint)
+
+        response.raise_for_status()
         return _parse_meal_plan(response.json())
 
 

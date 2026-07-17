@@ -65,4 +65,5 @@ class RecipeRecord(Base):
 
     meal_plan_entries: Mapped[list["MealPlanEntryRecord"]] = relationship(
         back_populates="recipe",
+        passive_deletes=True,
     )

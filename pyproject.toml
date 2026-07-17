@@ -18,6 +18,7 @@ dependencies = [
     "pyyaml>=6.0.3",
     "recipe-scrapers>=15.11.0",
     "sqlalchemy>=2.0.51",
+    "tzdata>=2025.3",
     "uvicorn[standard]>=0.51.0",
 ]
 
