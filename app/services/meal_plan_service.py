@@ -1,5 +1,6 @@
 from datetime import date, timedelta
 
+from app.database.models.meal_plan import MealPlanRecord
 from app.database.models.meal_plan_entry import (
     MealPlanEntryRecord,
 )
@@ -83,3 +84,9 @@ class MealPlanService:
             raise ValueError(
                 "Planned date must fall within the seven-day meal plan period"
             )
+
+    def get_plan(
+        self,
+        start_date: date,
+    ) -> MealPlanRecord | None:
+        return self.meal_plan_repository.get_by_start_date(start_date)

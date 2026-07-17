@@ -153,3 +153,63 @@ def test_add_recipe_rejects_duplicate_meal_slot(
                 recipe_identifier="tomatensoep",
                 meal_type="dinner",
             )
+
+
+def test_get_plan_returns_plan_with_entries(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        recipe_repository = RecipeRepository(session)
+
+        recipe_repository.add(
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        session.commit()
+
+        service = MealPlanService(session)
+
+        service.add_recipe(
+            start_date=date(2026, 7, 15),
+            planned_date=date(2026, 7, 16),
+            recipe_identifier="pasta-carbonara",
+            meal_type="dinner",
+            servings=2,
+        )
+
+        result = service.get_plan(date(2026, 7, 15))
+
+        assert result is not None
+        assert result.start_date == date(
+            2026,
+            7,
+            15,
+        )
+        assert len(result.entries) == 1
+        assert result.entries[0].recipe.title == ("Pasta Carbonara")
+
+
+def test_get_plan_returns_none_when_missing(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        service = MealPlanService(session)
+
+        result = service.get_plan(date(2026, 7, 15))
+
+        assert result is None
