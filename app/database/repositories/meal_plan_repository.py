@@ -1,0 +1,57 @@
+from datetime import date
+
+from sqlalchemy import select
+from sqlalchemy.orm import Session, selectinload
+
+from app.database.models.meal_plan import MealPlanRecord
+from app.database.models.meal_plan_entry import (
+    MealPlanEntryRecord,
+)
+
+
+class MealPlanRepository:
+    def __init__(self, session: Session) -> None:
+        self.session = session
+
+    def get_by_start_date(
+        self,
+        start_date: date,
+    ) -> MealPlanRecord | None:
+        statement = (
+            select(MealPlanRecord)
+            .options(
+                selectinload(MealPlanRecord.entries).selectinload(
+                    MealPlanEntryRecord.recipe
+                )
+            )
+            .where(MealPlanRecord.start_date == start_date)
+        )
+
+        return self.session.scalar(statement)
+
+    def add(
+        self,
+        meal_plan: MealPlanRecord,
+    ) -> MealPlanRecord:
+        self.session.add(meal_plan)
+        self.session.flush()
+
+        return meal_plan
+
+    def get_or_create(
+        self,
+        *,
+        start_date: date,
+        name: str | None = None,
+    ) -> MealPlanRecord:
+        existing = self.get_by_start_date(start_date)
+
+        if existing is not None:
+            return existing
+
+        meal_plan = MealPlanRecord(
+            start_date=start_date,
+            name=name,
+        )
+
+        return self.add(meal_plan)
