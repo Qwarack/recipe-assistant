@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.dependencies import create_recipe_index_sync_service
 from app.api.schemas.imports import (
     ManualImportRequest,
     RecipePreview,
@@ -18,6 +19,9 @@ from app.services.import_debug_storage import ImportDebugStorage
 from app.services.markdown_renderer import RecipeMarkdownRenderer
 from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
 from app.services.recipe_import_service import RecipeImportService
+from app.services.recipe_index_sync_service import (
+    RecipeIndexSyncService,
+)
 from app.services.recipe_preview_service import RecipePreviewService
 from app.services.recipe_storage import RecipeStorage
 
@@ -36,6 +40,10 @@ def create_import_service(
     http_client: Annotated[
         SafeHttpClient,
         Depends(get_http_client),
+    ],
+    index_sync_service: Annotated[
+        RecipeIndexSyncService,
+        Depends(create_recipe_index_sync_service),
     ],
 ) -> RecipeImportService:
     settings = get_settings()
@@ -56,6 +64,7 @@ def create_import_service(
         importer=importer,
         storage=storage,
         duplicate_detector=duplicate_detector,
+        index_sync_service=index_sync_service,
     )
 
 
@@ -77,7 +86,12 @@ def create_preview_service(
     return RecipePreviewService(importer=importer)
 
 
-def create_manual_import_service() -> RecipeImportService:
+def create_manual_import_service(
+    index_sync_service: Annotated[
+        RecipeIndexSyncService,
+        Depends(create_recipe_index_sync_service),
+    ],
+) -> RecipeImportService:
     settings = get_settings()
     importer = ManualTextRecipeImporter()
     renderer = RecipeMarkdownRenderer()
@@ -93,6 +107,7 @@ def create_manual_import_service() -> RecipeImportService:
         importer=importer,
         storage=storage,
         duplicate_detector=duplicate_detector,
+        index_sync_service=index_sync_service,
     )
 
 

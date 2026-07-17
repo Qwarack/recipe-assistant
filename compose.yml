@@ -30,6 +30,8 @@ services:
     command: uv run python -m app.bot
     env_file:
       - .env
+    environment:
+      API_BASE_URL: http://api:8000
     depends_on:
       api:
         condition: service_healthy

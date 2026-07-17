@@ -87,3 +87,27 @@ class RecipeIndexSyncService:
             return {}
 
         return metadata
+
+    def sync_file(
+        self,
+        recipe_path: Path,
+    ) -> None:
+        if not recipe_path.is_file():
+            raise FileNotFoundError(f"Recipe file does not exist: {recipe_path}")
+
+        self._sync_file(recipe_path)
+        self.session.commit()
+
+    def remove_by_identifier(
+        self,
+        identifier: str,
+    ) -> bool:
+        recipe = self.repository.get_by_identifier(identifier)
+
+        if recipe is None:
+            return False
+
+        self.repository.delete(recipe)
+        self.session.commit()
+
+        return True

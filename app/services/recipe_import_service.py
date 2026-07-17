@@ -4,6 +4,9 @@ from typing import TypeVar
 from app.importers.base import RecipeImporter
 from app.models.import_result import ImportResult, ImportStatus, ImportWarning
 from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
+from app.services.recipe_index_sync_service import (
+    RecipeIndexSyncService,
+)
 from app.services.recipe_storage import (
     RecipeAlreadyExistsError,
     RecipeStorage,
@@ -19,10 +22,12 @@ class RecipeImportService:
         importer: RecipeImporter[str],
         storage: RecipeStorage,
         duplicate_detector: RecipeDuplicateDetector,
+        index_sync_service: RecipeIndexSyncService | None = None,
     ) -> None:
         self.importer = importer
         self.storage = storage
         self.duplicate_detector = duplicate_detector
+        self.index_sync_service = index_sync_service
 
     def import_and_save(
         self,
@@ -141,6 +146,9 @@ class RecipeImportService:
 
         try:
             destination = self.storage.save(recipe)
+
+            if self.index_sync_service is not None:
+                self.index_sync_service.sync_file(destination)
         except RecipeAlreadyExistsError as exc:
             duplicate_warning = ImportWarning(
                 code="recipe_already_exists",

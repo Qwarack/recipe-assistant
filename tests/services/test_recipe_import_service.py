@@ -23,6 +23,17 @@ class FakeRenderer:
         return f"# {recipe.title}\nimport_id: {recipe.import_id}\n"
 
 
+class FakeIndexSyncService:
+    def __init__(self) -> None:
+        self.synced_paths: list[Path] = []
+
+    def sync_file(
+        self,
+        recipe_path: Path,
+    ) -> None:
+        self.synced_paths.append(recipe_path)
+
+
 def make_recipe() -> Recipe:
     return Recipe(
         title="Pasta Carbonara",
@@ -46,6 +57,8 @@ def test_import_and_save_creates_markdown_file(
         recipe=recipe,
     )
 
+    index_sync_service = FakeIndexSyncService()
+
     service = RecipeImportService(
         importer=FakeImporter(import_result),
         storage=RecipeStorage(
@@ -53,6 +66,7 @@ def test_import_and_save_creates_markdown_file(
             renderer=FakeRenderer(),
         ),
         duplicate_detector=RecipeDuplicateDetector(tmp_path),
+        index_sync_service=index_sync_service,
     )
 
     result, destination = service.import_and_save("https://example.com/pasta")
@@ -69,6 +83,8 @@ def test_import_and_save_creates_markdown_file(
     assert str(result.import_id) in markdown
     assert result.recipe.content_hash is not None
     assert len(result.recipe.content_hash) == 64
+    assert destination is not None
+    assert index_sync_service.synced_paths == [destination]
 
 
 def test_failed_import_is_not_saved(
