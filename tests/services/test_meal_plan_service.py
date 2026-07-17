@@ -1,0 +1,155 @@
+from datetime import date
+from pathlib import Path
+
+import pytest
+from app.database.base import Base
+from app.database.engine import create_session_factory
+from app.database.models.recipe import RecipeRecord
+from app.database.repositories.recipe_repository import (
+    RecipeRepository,
+)
+from app.services.meal_plan_service import (
+    MealPlanService,
+)
+
+
+def test_add_recipe_to_custom_start_date_plan(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        recipe_repository = RecipeRepository(session)
+        recipe_repository.add(
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        session.commit()
+
+        service = MealPlanService(session)
+
+        entry = service.add_recipe(
+            start_date=date(2026, 7, 15),
+            planned_date=date(2026, 7, 17),
+            recipe_identifier="pasta-carbonara",
+            servings=3,
+        )
+
+        assert entry.id is not None
+        assert entry.meal_plan.start_date == date(
+            2026,
+            7,
+            15,
+        )
+        assert entry.planned_date == date(
+            2026,
+            7,
+            17,
+        )
+        assert entry.servings == 3
+        assert entry.recipe.title == "Pasta Carbonara"
+
+
+def test_add_recipe_rejects_date_outside_plan(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        service = MealPlanService(session)
+
+        with pytest.raises(
+            ValueError,
+            match="seven-day meal plan period",
+        ):
+            service.add_recipe(
+                start_date=date(2026, 7, 15),
+                planned_date=date(2026, 7, 22),
+                recipe_identifier="pasta-carbonara",
+            )
+
+
+def test_add_recipe_rejects_zero_servings(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        service = MealPlanService(session)
+
+        with pytest.raises(
+            ValueError,
+            match="Servings must be at least 1",
+        ):
+            service.add_recipe(
+                start_date=date(2026, 7, 15),
+                planned_date=date(2026, 7, 15),
+                recipe_identifier="pasta-carbonara",
+                servings=0,
+            )
+
+
+def test_add_recipe_rejects_duplicate_meal_slot(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        recipe_repository = RecipeRepository(session)
+
+        recipe_repository.add(
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        recipe_repository.add(
+            RecipeRecord(
+                identifier="tomatensoep",
+                title="Tomatensoep",
+                file_path="data/recipes/tomatensoep.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        session.commit()
+
+        service = MealPlanService(session)
+
+        service.add_recipe(
+            start_date=date(2026, 7, 15),
+            planned_date=date(2026, 7, 15),
+            recipe_identifier="pasta-carbonara",
+            meal_type="dinner",
+        )
+
+        with pytest.raises(
+            ValueError,
+            match="meal slot is already planned",
+        ):
+            service.add_recipe(
+                start_date=date(2026, 7, 15),
+                planned_date=date(2026, 7, 15),
+                recipe_identifier="tomatensoep",
+                meal_type="dinner",
+            )
