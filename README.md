@@ -196,6 +196,48 @@ Ondersteunde voorkeuren zijn onder andere:
 
 Harde filters bepalen welke recepten geschikt zijn. Losse scoringsregels geven vervolgens voorkeur aan lang niet geplande recepten, snelle werkdagmaaltijden, passende moeilijkheid en tagvariatie. Bij een gelijke hoogste score beslist een lokale randomgenerator op basis van de seed. De globale randomstate wordt niet gebruikt.
 
+### Werkdag- en weekendvoorkeuren aanpassen
+
+Per generatie kun je harde tijdslimieten instellen met `max_preparation_time_weekday` en `max_preparation_time_weekend`. Beide velden accepteren een geheel aantal minuten van `0` of hoger. Laat een veld weg of gebruik `null` voor geen tijdslimiet. `days_to_plan` en `vegetarian_days` accepteren de volgende weekdagwaarden:
+
+| Waarde | Dag |
+| ---: | --- |
+| `0` | maandag |
+| `1` | dinsdag |
+| `2` | woensdag |
+| `3` | donderdag |
+| `4` | vrijdag |
+| `5` | zaterdag |
+| `6` | zondag |
+
+Voorbeeld met verschillende limieten voor werkdagen en het weekend:
+
+```json
+{
+  "days_to_plan": [0, 1, 2, 3, 4, 5, 6],
+  "max_preparation_time_weekday": 30,
+  "max_preparation_time_weekend": 90
+}
+```
+
+De zachte gewichten zijn momenteel codeconfiguratie en kunnen niet via `.env`, Discord of de generatie-API worden aangepast. Wijzig hiervoor `app/services/planning_rules.py`. Een score mag een geheel getal of kommagetal zijn: positief geeft voorkeur, `0` is neutraal en negatief maakt een recept minder aantrekkelijk. De planner telt alle regels bij elkaar op, dus de grootte van een gewicht bepaalt ook hoe zwaar het meetelt tegenover de andere regels.
+
+De standaardgewichten zijn:
+
+| Regel | Werkdag | Weekend | Mogelijke standaardscore |
+| --- | --- | --- | ---: |
+| Bereidingstijd | `(60 - minuten) / 20`, begrensd op `-2` t/m `3` | `min(2, minuten / 60)` | `-2` t/m `3` |
+| Moeilijkheid | `+1,5` voor `easy` of `makkelijk` | `+1,5` voor `hard` of `moeilijk` | `0` of `1,5` |
+| Recentheid | gelijk op alle dagen | gelijk op alle dagen | `0` t/m `5`; nooit gepland is `5` |
+| Tagvariatie | gelijk op alle dagen | gelijk op alle dagen | `-3`, `0` of `3` |
+
+Andere moeilijkheidswaarden, waaronder `unknown`, krijgen een neutrale moeilijkheidsscore van `0`. Gebruik bij eigen gewichten bij voorkeur eindige getallen en pas de `RuleScore(...)`-waarden of formules in de betreffende regel aan. Herstart daarna de API en bot. Controleer een wijziging met:
+
+```bash
+uv run ruff check app tests alembic
+uv run python -m pytest tests/services/test_planning_rules.py
+```
+
 Wanneer geen recept aan de filters voldoet, blijft alleen dat slot ongevuld en bevat de response een concrete waarschuwing. Standaard kan zo'n voorstel niet worden geactiveerd. Zet `allow_unfilled_slots` alleen bewust op `true` om dit toe te staan.
 
 Discord biedt:
