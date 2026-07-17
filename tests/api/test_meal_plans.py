@@ -87,3 +87,110 @@ def test_get_meal_plan_endpoint_returns_404(
 
     assert response.status_code == 404
     assert response.json() == {"detail": "Meal plan not found"}
+
+
+def test_add_meal_plan_entry_endpoint(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    session = session_factory()
+
+    recipe_repository = RecipeRepository(session)
+    recipe_repository.add(
+        RecipeRecord(
+            identifier="pasta-carbonara",
+            title="Pasta Carbonara",
+            file_path="data/recipes/pasta-carbonara.md",
+            source_url=None,
+            content_hash=None,
+        )
+    )
+    session.commit()
+
+    service = MealPlanService(session)
+
+    app.dependency_overrides[meal_plans_api.create_meal_plan_service] = lambda: service
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                "/meal-plans/2026-07-15/entries",
+                json={
+                    "planned_date": "2026-07-17",
+                    "recipe_identifier": "pasta-carbonara",
+                    "meal_type": "dinner",
+                    "servings": 3,
+                    "notes": "Extra kaas",
+                    "plan_name": "Boodschappenweek",
+                },
+            )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+    assert response.status_code == 201
+
+    body = response.json()
+
+    assert body["start_date"] == "2026-07-15"
+    assert body["end_date"] == "2026-07-21"
+    assert body["name"] == "Boodschappenweek"
+    assert len(body["entries"]) == 1
+    assert body["entries"][0]["recipe_title"] == ("Pasta Carbonara")
+    assert body["entries"][0]["servings"] == 3
+
+
+def test_add_meal_plan_entry_endpoint_rejects_duplicate_slot(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    session = session_factory()
+
+    recipe_repository = RecipeRepository(session)
+    recipe_repository.add(
+        RecipeRecord(
+            identifier="pasta-carbonara",
+            title="Pasta Carbonara",
+            file_path="data/recipes/pasta-carbonara.md",
+            source_url=None,
+            content_hash=None,
+        )
+    )
+    session.commit()
+
+    service = MealPlanService(session)
+
+    app.dependency_overrides[meal_plans_api.create_meal_plan_service] = lambda: service
+
+    payload = {
+        "planned_date": "2026-07-17",
+        "recipe_identifier": "pasta-carbonara",
+        "meal_type": "dinner",
+        "servings": 2,
+    }
+
+    try:
+        with TestClient(app) as client:
+            first_response = client.post(
+                "/meal-plans/2026-07-15/entries",
+                json=payload,
+            )
+            second_response = client.post(
+                "/meal-plans/2026-07-15/entries",
+                json=payload,
+            )
+    finally:
+        app.dependency_overrides.clear()
+        session.close()
+
+    assert first_response.status_code == 201
+    assert second_response.status_code == 409
+    assert second_response.json() == {"detail": "This meal slot is already planned"}
