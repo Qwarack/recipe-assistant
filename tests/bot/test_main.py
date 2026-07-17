@@ -3,6 +3,7 @@ from unittest.mock import AsyncMock, MagicMock
 
 import discord
 from app.bot.api_client import RecipeImportResponse
+from app.bot.cogs.week import WeekCommands
 from app.bot.main import create_bot
 from app.bot.views import RecipeImportView
 from app.core.config import Settings
@@ -27,6 +28,19 @@ def test_create_bot_registers_recipe_group() -> None:
 
     assert text_command is not None
     assert text_command.name == "tekst"
+
+
+def test_setup_hook_registers_week_commands() -> None:
+    bot = create_bot()
+
+    asyncio.run(bot.setup_hook())
+
+    cog = bot.get_cog("WeekCommands")
+    command = bot.tree.get_command("week")
+
+    assert isinstance(cog, WeekCommands)
+    assert command is not None
+    assert command.name == "week"
 
 
 def test_import_commands_have_cooldown_and_error_handler() -> None:

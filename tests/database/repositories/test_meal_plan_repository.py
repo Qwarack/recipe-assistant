@@ -72,6 +72,62 @@ def test_get_meal_plan_returns_none_when_missing(
         assert result is None
 
 
+def test_get_for_date_returns_plan_containing_date(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = MealPlanRepository(session)
+
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 15),
+                name="Woensdagplanning",
+            )
+        )
+        session.commit()
+
+        result = repository.get_for_date(date(2026, 7, 19))
+
+        assert result is not None
+        assert result.start_date == date(2026, 7, 15)
+
+
+def test_get_latest_returns_newest_plan(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = MealPlanRepository(session)
+
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 8),
+                name="Oude planning",
+            )
+        )
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 15),
+                name="Nieuwe planning",
+            )
+        )
+        session.commit()
+
+        result = repository.get_latest()
+
+        assert result is not None
+        assert result.start_date == date(2026, 7, 15)
+
+
 def test_get_or_create_creates_new_meal_plan(
     tmp_path: Path,
 ) -> None:

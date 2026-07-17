@@ -1,6 +1,6 @@
 import discord
 
-from app.bot.api_client import RecipeDetail, RecipeImportResponse
+from app.bot.api_client import MealPlan, RecipeDetail, RecipeImportResponse
 from app.bot.text_utils import split_text
 
 
@@ -179,5 +179,57 @@ def build_recipe_detail_embed(
         )
 
     embed.set_footer(text=f"Recept-ID: {recipe.identifier}")
+
+    return embed
+
+
+def build_meal_plan_embed(
+    meal_plan: MealPlan,
+) -> discord.Embed:
+    title = meal_plan.name or "Weekplanning"
+
+    embed = discord.Embed(
+        title=title,
+        description=(
+            f"Periode: **{meal_plan.start_date:%d-%m-%Y}** "
+            f"t/m **{meal_plan.end_date:%d-%m-%Y}**"
+        ),
+    )
+
+    if not meal_plan.entries:
+        embed.add_field(
+            name="Planning",
+            value="Er zijn nog geen recepten ingepland.",
+            inline=False,
+        )
+        return embed
+
+    sorted_entries = sorted(
+        meal_plan.entries,
+        key=lambda entry: (
+            entry.planned_date,
+            entry.meal_type,
+        ),
+    )
+
+    for entry in sorted_entries:
+        field_name = f"{entry.planned_date:%A %d-%m} · {entry.meal_type}"
+
+        field_value = (
+            f"**{entry.recipe_title}**\n"
+            f"Porties: {entry.servings}\n"
+            f"Recept-ID: `{entry.recipe_identifier}`"
+        )
+
+        if entry.notes:
+            field_value += f"\nNotitie: {entry.notes}"
+
+        embed.add_field(
+            name=field_name,
+            value=field_value,
+            inline=False,
+        )
+
+    embed.set_footer(text=f"Planning-ID: {meal_plan.id}")
 
     return embed

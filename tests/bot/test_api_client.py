@@ -1,5 +1,6 @@
 import asyncio
 import json
+from datetime import date
 
 import httpx
 from app.bot.api_client import RecipeApiClient
@@ -225,3 +226,42 @@ def test_import_uploaded_recipe_sends_multipart_file_and_force_flag() -> None:
     )
 
     assert result.destination == "/data/recipes/pasta.md"
+
+
+def test_get_current_meal_plan() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "GET"
+        assert request.url == "http://api.test/meal-plans/current"
+
+        return httpx.Response(
+            status_code=200,
+            json={
+                "id": 10,
+                "start_date": "2026-07-15",
+                "end_date": "2026-07-21",
+                "name": "Huidige planning",
+                "entries": [
+                    {
+                        "id": 1,
+                        "planned_date": "2026-07-17",
+                        "meal_type": "dinner",
+                        "servings": 2,
+                        "notes": None,
+                        "recipe_identifier": "pasta-carbonara",
+                        "recipe_title": "Pasta Carbonara",
+                    }
+                ],
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(client.get_current_meal_plan())
+
+    assert result.id == 10
+    assert result.name == "Huidige planning"
+    assert result.start_date == date(2026, 7, 15)
+    assert result.entries[0].recipe_title == "Pasta Carbonara"

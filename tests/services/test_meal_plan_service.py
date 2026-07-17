@@ -4,7 +4,11 @@ from pathlib import Path
 import pytest
 from app.database.base import Base
 from app.database.engine import create_session_factory
+from app.database.models.meal_plan import MealPlanRecord
 from app.database.models.recipe import RecipeRecord
+from app.database.repositories.meal_plan_repository import (
+    MealPlanRepository,
+)
 from app.database.repositories.recipe_repository import (
     RecipeRepository,
 )
@@ -213,3 +217,69 @@ def test_get_plan_returns_none_when_missing(
         result = service.get_plan(date(2026, 7, 15))
 
         assert result is None
+
+
+def test_get_current_or_latest_plan_returns_current_plan(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = MealPlanRepository(session)
+
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 8),
+                name="Oude planning",
+            )
+        )
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 15),
+                name="Huidige planning",
+            )
+        )
+        session.commit()
+
+        service = MealPlanService(session)
+
+        result = service.get_current_or_latest_plan(date(2026, 7, 18))
+
+        assert result is not None
+        assert result.name == "Huidige planning"
+
+
+def test_get_current_or_latest_plan_falls_back_to_latest(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = MealPlanRepository(session)
+
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 1),
+                name="Oude planning",
+            )
+        )
+        repository.add(
+            MealPlanRecord(
+                start_date=date(2026, 7, 8),
+                name="Nieuwste planning",
+            )
+        )
+        session.commit()
+
+        service = MealPlanService(session)
+
+        result = service.get_current_or_latest_plan(date(2026, 7, 30))
+
+        assert result is not None
+        assert result.name == "Nieuwste planning"

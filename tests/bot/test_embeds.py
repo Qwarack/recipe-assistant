@@ -1,9 +1,17 @@
+from datetime import date
+
 from app.bot.api_client import (
+    MealPlan,
+    MealPlanEntry,
     RecipeDetail,
     RecipeImportResponse,
     RecipePreview,
 )
-from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
+from app.bot.embeds import (
+    build_meal_plan_embed,
+    build_recipe_detail_embed,
+    build_recipe_import_embed,
+)
 
 
 def test_builds_recipe_import_embed() -> None:
@@ -155,3 +163,58 @@ def test_recipe_import_embed_splits_long_warnings() -> None:
     assert len(warning_fields) > 1
 
     assert all(len(field.value) <= 1024 for field in warning_fields)
+
+
+def test_builds_meal_plan_embed() -> None:
+    meal_plan = MealPlan(
+        id=10,
+        start_date=date(2026, 7, 15),
+        end_date=date(2026, 7, 21),
+        name="Boodschappenweek",
+        entries=[
+            MealPlanEntry(
+                id=1,
+                planned_date=date(2026, 7, 17),
+                meal_type="dinner",
+                servings=3,
+                notes="Extra kaas",
+                recipe_identifier="pasta-carbonara",
+                recipe_title="Pasta Carbonara",
+            ),
+            MealPlanEntry(
+                id=2,
+                planned_date=date(2026, 7, 15),
+                meal_type="dinner",
+                servings=2,
+                notes=None,
+                recipe_identifier="tomatensoep",
+                recipe_title="Tomatensoep",
+            ),
+        ],
+    )
+
+    embed = build_meal_plan_embed(meal_plan)
+
+    assert embed.title == "Boodschappenweek"
+    assert "15-07-2026" in (embed.description or "")
+    assert "21-07-2026" in (embed.description or "")
+    assert len(embed.fields) == 2
+    assert "Tomatensoep" in embed.fields[0].value
+    assert "Pasta Carbonara" in embed.fields[1].value
+    assert embed.footer.text == "Planning-ID: 10"
+
+
+def test_meal_plan_embed_handles_empty_plan() -> None:
+    meal_plan = MealPlan(
+        id=10,
+        start_date=date(2026, 7, 15),
+        end_date=date(2026, 7, 21),
+        name=None,
+        entries=[],
+    )
+
+    embed = build_meal_plan_embed(meal_plan)
+
+    assert embed.title == "Weekplanning"
+    assert len(embed.fields) == 1
+    assert embed.fields[0].value == "Er zijn nog geen recepten ingepland."

@@ -1,4 +1,5 @@
 from dataclasses import dataclass
+from datetime import date
 from typing import Any
 
 import httpx
@@ -38,6 +39,26 @@ class RecipeDetail:
     source_url: str | None
     tags: list[str]
     meal_types: list[str]
+
+
+@dataclass(slots=True)
+class MealPlanEntry:
+    id: int
+    planned_date: date
+    meal_type: str
+    servings: int
+    notes: str | None
+    recipe_identifier: str
+    recipe_title: str
+
+
+@dataclass(slots=True)
+class MealPlan:
+    id: int
+    start_date: date
+    end_date: date
+    name: str | None
+    entries: list[MealPlanEntry]
 
 
 def _parse_import_response(
@@ -307,3 +328,88 @@ class RecipeApiClient:
         response.raise_for_status()
 
         return _parse_import_response(response.json())
+
+    async def get_meal_plan(
+        self,
+        start_date: date,
+    ) -> MealPlan:
+        endpoint = f"{self.base_url}/meal-plans/{start_date.isoformat()}"
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.get(endpoint)
+
+        response.raise_for_status()
+
+        return _parse_meal_plan(response.json())
+
+    async def get_current_meal_plan(
+        self,
+    ) -> MealPlan:
+        endpoint = f"{self.base_url}/meal-plans/current"
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.get(endpoint)
+
+        response.raise_for_status()
+
+        return _parse_meal_plan(response.json())
+
+    async def add_meal_plan_entry(
+        self,
+        *,
+        start_date: date,
+        planned_date: date,
+        recipe_identifier: str,
+        meal_type: str = "dinner",
+        servings: int = 2,
+        notes: str | None = None,
+        plan_name: str | None = None,
+    ) -> MealPlan:
+        endpoint = f"{self.base_url}/meal-plans/{start_date.isoformat()}/entries"
+
+        response_payload = {
+            "planned_date": planned_date.isoformat(),
+            "recipe_identifier": recipe_identifier,
+            "meal_type": meal_type,
+            "servings": servings,
+            "notes": notes,
+            "plan_name": plan_name,
+        }
+
+        async with httpx.AsyncClient(timeout=self.timeout_seconds) as client:
+            response = await client.post(
+                endpoint,
+                json=response_payload,
+            )
+
+        response.raise_for_status()
+
+        return _parse_meal_plan(response.json())
+
+
+def _parse_meal_plan(
+    payload: dict[str, Any],
+) -> MealPlan:
+    entries = [
+        MealPlanEntry(
+            id=item["id"],
+            planned_date=date.fromisoformat(item["planned_date"]),
+            meal_type=item["meal_type"],
+            servings=item["servings"],
+            notes=item.get("notes"),
+            recipe_identifier=item["recipe_identifier"],
+            recipe_title=item["recipe_title"],
+        )
+        for item in payload.get("entries", [])
+    ]
+
+    return MealPlan(
+        id=payload["id"],
+        start_date=date.fromisoformat(payload["start_date"]),
+        end_date=date.fromisoformat(payload["end_date"]),
+        name=payload.get("name"),
+        entries=entries,
+    )

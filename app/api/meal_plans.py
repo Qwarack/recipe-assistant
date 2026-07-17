@@ -37,6 +37,29 @@ def create_meal_plan_service() -> Generator[
 
 
 @router.get(
+    "/current",
+    response_model=MealPlanDetail,
+)
+def get_current_meal_plan(
+    service: Annotated[
+        MealPlanService,
+        Depends(create_meal_plan_service),
+    ],
+) -> MealPlanDetail:
+    today = date.today()
+
+    meal_plan = service.get_current_or_latest_plan(today)
+
+    if meal_plan is None:
+        raise HTTPException(
+            status_code=status.HTTP_404_NOT_FOUND,
+            detail="No meal plans found",
+        )
+
+    return map_meal_plan_detail(meal_plan)
+
+
+@router.get(
     "/{start_date}",
     response_model=MealPlanDetail,
 )

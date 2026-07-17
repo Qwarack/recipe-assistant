@@ -9,6 +9,7 @@ from discord.ext import commands
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.attachments import validate_recipe_attachment
 from app.bot.checks import ensure_allowed_channel, ensure_allowed_role
+from app.bot.cogs.week import WeekCommands
 from app.bot.constants import NOTICE_EPHEMERAL, PREVIEW_EPHEMERAL
 from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
@@ -32,6 +33,10 @@ def create_bot() -> commands.Bot:
     )
 
     api_client = RecipeApiClient(base_url=settings.api_base_url)
+
+    @bot.event
+    async def setup_hook() -> None:
+        await bot.add_cog(WeekCommands(api_client))
 
     recipe_group = app_commands.Group(
         name="recept",

@@ -90,3 +90,14 @@ class MealPlanService:
         start_date: date,
     ) -> MealPlanRecord | None:
         return self.meal_plan_repository.get_by_start_date(start_date)
+
+    def get_current_or_latest_plan(
+        self,
+        target_date: date,
+    ) -> MealPlanRecord | None:
+        current_plan = self.meal_plan_repository.get_for_date(target_date)
+
+        if current_plan is not None:
+            return current_plan
+
+        return self.meal_plan_repository.get_latest()
