@@ -1,18 +1,20 @@
 from pathlib import Path
 
-from app.services.recipe_index_sync_service import (
-    RecipeIndexSyncService,
+from app.database.repositories.recipe_repository import (
+    RecipeRepository,
 )
+from sqlalchemy.orm import Session
 
 
 class RecipeDeleteService:
     def __init__(
         self,
         recipes_path: Path,
-        index_sync_service: RecipeIndexSyncService | None = None,
+        session: Session | None = None,
     ) -> None:
         self.recipes_path = recipes_path
-        self.index_sync_service = index_sync_service
+        self.session = session
+        self.repository = RecipeRepository(session) if session is not None else None
 
     def delete_by_identifier(
         self,
@@ -26,7 +28,8 @@ class RecipeDeleteService:
 
         recipe_path.unlink()
 
-        if self.index_sync_service is not None:
-            self.index_sync_service.remove_by_identifier(safe_identifier)
+        if self.repository is not None and self.session is not None:
+            self.repository.delete_by_identifier(safe_identifier)
+            self.session.commit()
 
         return True

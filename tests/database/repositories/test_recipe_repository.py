@@ -124,6 +124,51 @@ def test_delete_recipe(
         assert result is None
 
 
+def test_delete_recipe_by_identifier(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = RecipeRepository(session)
+
+        repository.add(
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        session.commit()
+
+        deleted = repository.delete_by_identifier("pasta-carbonara")
+        session.commit()
+
+        assert deleted is True
+        assert repository.get_by_identifier("pasta-carbonara") is None
+
+
+def test_delete_by_identifier_returns_false_when_missing(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = RecipeRepository(session)
+
+        deleted = repository.delete_by_identifier("bestaat-niet")
+
+        assert deleted is False
+
+
 def test_search_recipes_by_title(
     tmp_path: Path,
 ) -> None:

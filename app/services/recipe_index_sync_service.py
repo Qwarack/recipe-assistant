@@ -102,12 +102,9 @@ class RecipeIndexSyncService:
         self,
         identifier: str,
     ) -> bool:
-        recipe = self.repository.get_by_identifier(identifier)
+        deleted = self.repository.delete_by_identifier(identifier)
 
-        if recipe is None:
-            return False
+        if deleted:
+            self.session.commit()
 
-        self.repository.delete(recipe)
-        self.session.commit()
-
-        return True
+        return deleted

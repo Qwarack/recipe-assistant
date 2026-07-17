@@ -50,6 +50,20 @@ class RecipeRepository:
         self.session.delete(recipe)
         self.session.flush()
 
+    def delete_by_identifier(
+        self,
+        identifier: str,
+    ) -> bool:
+        recipe = self.get_by_identifier(identifier)
+
+        if recipe is None:
+            return False
+
+        self.session.delete(recipe)
+        self.session.flush()
+
+        return True
+
     def search_by_title(
         self,
         query: str,

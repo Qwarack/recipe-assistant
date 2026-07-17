@@ -3,7 +3,6 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, Query, status
 
-from app.api.dependencies import create_recipe_index_sync_service
 from app.core.config import get_settings
 from app.database.engine import create_session_factory
 from app.database.repositories.recipe_repository import (
@@ -20,9 +19,6 @@ from app.services.recipe_delete_service import (
 from app.services.recipe_detail_service import (
     RecipeDetailService,
 )
-from app.services.recipe_index_sync_service import (
-    RecipeIndexSyncService,
-)
 
 router = APIRouter(
     prefix="/recipes",
@@ -30,18 +26,19 @@ router = APIRouter(
 )
 
 
-def create_recipe_delete_service(
-    index_sync_service: Annotated[
-        RecipeIndexSyncService,
-        Depends(create_recipe_index_sync_service),
-    ],
-) -> RecipeDeleteService:
+def create_recipe_delete_service() -> Generator[
+    RecipeDeleteService,
+    None,
+    None,
+]:
     settings = get_settings()
+    session_factory = create_session_factory(settings.database_path)
 
-    return RecipeDeleteService(
-        recipes_path=settings.recipes_path,
-        index_sync_service=index_sync_service,
-    )
+    with session_factory() as session:
+        yield RecipeDeleteService(
+            recipes_path=settings.recipes_path,
+            session=session,
+        )
 
 
 def create_recipe_search_service() -> Generator[
