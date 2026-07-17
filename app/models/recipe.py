@@ -69,6 +69,12 @@ class Recipe(BaseModel):
     prep_time_minutes: int | None = Field(default=None, ge=0)
     cook_time_minutes: int | None = Field(default=None, ge=0)
     total_time_minutes: int | None = Field(default=None, ge=0)
+    difficulty: str = Field(default="unknown", min_length=1, max_length=50)
+    vegetarian: bool | None = None
+    vegan: bool | None = None
+    suitable_for_leftovers: bool = False
+    leftover_servings: int | None = Field(default=None, ge=1)
+    leftover_days: int = Field(default=1, ge=1, le=7)
 
     ingredients: list[Ingredient] = Field(min_length=1)
     instructions: list[str] = Field(min_length=1)
@@ -172,6 +178,13 @@ class Recipe(BaseModel):
             return stripped or None
 
         return value
+
+    @field_validator("difficulty", mode="before")
+    @classmethod
+    def normalize_difficulty(cls, value: object) -> str:
+        if not isinstance(value, str) or not value.strip():
+            return "unknown"
+        return value.strip().casefold()
 
     @field_validator("imported_at")
     @classmethod

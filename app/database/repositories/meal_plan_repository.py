@@ -3,7 +3,7 @@ from datetime import date, timedelta
 from sqlalchemy import select
 from sqlalchemy.orm import Session, selectinload
 
-from app.database.models.meal_plan import MealPlanRecord
+from app.database.models.meal_plan import MealPlanRecord, MealPlanStatus
 from app.database.models.meal_plan_entry import (
     MealPlanEntryRecord,
 )
@@ -25,6 +25,7 @@ class MealPlanRepository:
                 )
             )
             .where(MealPlanRecord.start_date == start_date)
+            .where(MealPlanRecord.status == MealPlanStatus.ACTIVE.value)
         )
 
         return self.session.scalar(statement)
@@ -45,8 +46,10 @@ class MealPlanRepository:
             .where(
                 MealPlanRecord.start_date >= earliest_start_date,
                 MealPlanRecord.start_date <= target_date,
+                MealPlanRecord.status == MealPlanStatus.ACTIVE.value,
             )
             .order_by(MealPlanRecord.start_date.desc())
+            .where(MealPlanRecord.status == MealPlanStatus.ACTIVE.value)
             .limit(1)
         )
 
@@ -89,6 +92,7 @@ class MealPlanRepository:
         meal_plan = MealPlanRecord(
             start_date=start_date,
             name=name,
+            status=MealPlanStatus.ACTIVE.value,
         )
 
         return self.add(meal_plan)
@@ -128,3 +132,24 @@ class MealPlanRepository:
         entry: MealPlanEntryRecord,
     ) -> None:
         self.session.delete(entry)
+
+    def get_by_id(self, plan_id: int) -> MealPlanRecord | None:
+        statement = (
+            select(MealPlanRecord)
+            .options(
+                selectinload(MealPlanRecord.entries).selectinload(
+                    MealPlanEntryRecord.recipe
+                )
+            )
+            .where(MealPlanRecord.id == plan_id)
+        )
+        return self.session.scalar(statement)
+
+    def get_active_by_start_date(
+        self,
+        start_date: date,
+    ) -> MealPlanRecord | None:
+        return self.get_by_start_date(start_date)
+
+    def delete(self, meal_plan: MealPlanRecord) -> None:
+        self.session.delete(meal_plan)

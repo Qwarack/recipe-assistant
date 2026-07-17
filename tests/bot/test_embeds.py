@@ -1,13 +1,16 @@
 from datetime import date
 
 from app.bot.api_client import (
+    GeneratedMealPlan,
     MealPlan,
     MealPlanEntry,
     RecipeDetail,
     RecipeImportResponse,
     RecipePreview,
+    UnfilledMealPlanSlot,
 )
 from app.bot.embeds import (
+    build_generated_meal_plan_embed,
     build_meal_plan_embed,
     build_recipe_detail_embed,
     build_recipe_import_embed,
@@ -205,6 +208,48 @@ def test_builds_meal_plan_embed() -> None:
     assert "Entry-ID: `2`" in embed.fields[0].value
     assert "Recept-ID: `tomatensoep`" in embed.fields[0].value
     assert embed.footer.text == "Planning-ID: 10"
+
+
+def test_generated_meal_plan_embed_shows_status_time_seed_and_warnings() -> None:
+    result = GeneratedMealPlan(
+        plan=MealPlan(
+            id=42,
+            start_date=date(2026, 7, 22),
+            end_date=date(2026, 7, 28),
+            name="Automatisch voorstel",
+            status="draft",
+            generation_seed=123,
+            entries=[
+                MealPlanEntry(
+                    id=7,
+                    planned_date=date(2026, 7, 22),
+                    meal_type="dinner",
+                    servings=2,
+                    notes=None,
+                    recipe_identifier="pasta-pesto",
+                    recipe_title="Pasta pesto",
+                    preparation_time_minutes=25,
+                    source="generated",
+                )
+            ],
+        ),
+        unfilled_slots=[
+            UnfilledMealPlanSlot(
+                planned_date=date(2026, 7, 23),
+                meal_type="dinner",
+                reason="Geen geschikte recepten",
+            )
+        ],
+        selection_explanations=[],
+        generation_seed=123,
+    )
+
+    embed = build_generated_meal_plan_embed(result)
+
+    assert embed.title.startswith("Voorstel:")
+    assert "Generation seed: `123`" in (embed.description or "")
+    assert "Bereiding: 25 min" in embed.fields[0].value
+    assert "niet gevuld" in embed.fields[1].name
 
 
 def test_meal_plan_embed_handles_empty_plan() -> None:

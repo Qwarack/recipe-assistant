@@ -1,4 +1,5 @@
 from datetime import date, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
 from sqlalchemy import (
@@ -17,6 +18,12 @@ from app.database.base import Base
 if TYPE_CHECKING:
     from app.database.models.meal_plan import MealPlanRecord
     from app.database.models.recipe import RecipeRecord
+
+
+class MealPlanEntrySource(StrEnum):
+    MANUAL = "manual"
+    GENERATED = "generated"
+    LEFTOVERS = "leftovers"
 
 
 class MealPlanEntryRecord(Base):
@@ -73,6 +80,21 @@ class MealPlanEntryRecord(Base):
 
     notes: Mapped[str | None] = mapped_column(
         String(500),
+        nullable=True,
+    )
+
+    source: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=MealPlanEntrySource.MANUAL.value,
+        index=True,
+    )
+
+    source_entry_id: Mapped[int | None] = mapped_column(
+        ForeignKey(
+            "meal_plan_entries.id",
+            ondelete="SET NULL",
+        ),
         nullable=True,
     )
 

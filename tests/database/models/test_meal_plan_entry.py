@@ -18,6 +18,8 @@ def test_meal_plan_entry_has_expected_columns() -> None:
         "meal_type",
         "servings",
         "notes",
+        "source",
+        "source_entry_id",
         "created_at",
         "updated_at",
     }

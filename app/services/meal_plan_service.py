@@ -1,8 +1,9 @@
-from datetime import date, timedelta
+from datetime import UTC, date, datetime, time, timedelta
 
 from app.database.models.meal_plan import MealPlanRecord
 from app.database.models.meal_plan_entry import (
     MealPlanEntryRecord,
+    MealPlanEntrySource,
 )
 from app.database.repositories.meal_plan_repository import (
     MealPlanRepository,
@@ -67,9 +68,14 @@ class MealPlanService:
             meal_type=meal_type,
             servings=servings,
             notes=notes,
+            source=MealPlanEntrySource.MANUAL.value,
         )
 
         self.session.add(entry)
+        self.recipe_repository.mark_planned(
+            recipe,
+            datetime.combine(planned_date, time.min, UTC),
+        )
 
         try:
             self.session.commit()
@@ -152,6 +158,10 @@ class MealPlanService:
             entry.servings = servings
         if update_notes:
             entry.notes = notes
+        self.recipe_repository.mark_planned(
+            entry.recipe,
+            datetime.combine(updated_date, time.min, UTC),
+        )
 
         try:
             self.session.commit()

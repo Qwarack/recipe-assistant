@@ -214,3 +214,58 @@ def test_remove_by_identifier_returns_false_when_missing(
         removed = service.remove_by_identifier("bestaat-niet")
 
         assert removed is False
+
+
+def test_sync_reads_and_updates_planning_metadata(
+    tmp_path: Path,
+) -> None:
+    recipes_path = tmp_path / "recipes"
+    recipes_path.mkdir()
+    recipe_path = recipes_path / "curry.md"
+    recipe_path.write_text(
+        """---
+title: Curry
+tags: [Indian, Quick]
+meal_types: [avondeten]
+preparation_time_minutes: 35
+difficulty: Easy
+servings: 4
+vegetarian: true
+vegan: false
+suitable_for_leftovers: true
+leftover_servings: 2
+leftover_days: 1
+---
+""",
+        encoding="utf-8",
+    )
+    session_factory = create_session_factory(tmp_path / "app.db")
+    Base.metadata.create_all(session_factory.kw["bind"])
+
+    with session_factory() as session:
+        service = RecipeIndexSyncService(
+            session=session,
+            recipes_path=recipes_path,
+        )
+        service.sync_file(recipe_path)
+        recipe = RecipeRepository(session).get_by_identifier("curry")
+
+        assert recipe is not None
+        assert recipe.tags == ["indian", "quick"]
+        assert recipe.meal_types == ["dinner"]
+        assert recipe.preparation_time_minutes == 35
+        assert recipe.difficulty == "easy"
+        assert recipe.default_servings == 4
+        assert recipe.vegetarian is True
+        assert recipe.vegan is False
+        assert recipe.suitable_for_leftovers is True
+        assert recipe.leftover_servings == 2
+
+        recipe_path.write_text("---\ntitle: Curry\ntags: [spicy]\n---\n")
+        service.sync_file(recipe_path)
+
+        assert recipe.tags == ["spicy"]
+        assert recipe.meal_types == ["dinner"]
+        assert recipe.difficulty == "unknown"
+        assert recipe.default_servings == 2
+        assert recipe.vegetarian is None

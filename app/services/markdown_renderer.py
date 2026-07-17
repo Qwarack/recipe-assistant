@@ -56,6 +56,13 @@ class RecipeMarkdownRenderer:
             "prep_time_minutes": recipe.prep_time_minutes,
             "cook_time_minutes": recipe.cook_time_minutes,
             "total_time_minutes": recipe.total_time_minutes,
+            "preparation_time_minutes": recipe.total_time_minutes,
+            "difficulty": recipe.difficulty,
+            "vegetarian": recipe.vegetarian,
+            "vegan": recipe.vegan,
+            "suitable_for_leftovers": recipe.suitable_for_leftovers,
+            "leftover_servings": recipe.leftover_servings,
+            "leftover_days": recipe.leftover_days,
             "meal_types": recipe.meal_types,
             "tags": recipe.tags,
         }

@@ -334,3 +334,131 @@ def test_remove_meal_plan_entry_uses_delete() -> None:
     )
 
     assert result.entries == []
+
+
+def generated_plan_payload(plan_id: int = 42, seed: int = 123) -> dict:
+    return {
+        "plan": {
+            "id": plan_id,
+            "start_date": "2026-07-22",
+            "end_date": "2026-07-28",
+            "name": "Automatisch voorstel",
+            "status": "draft",
+            "generation_seed": seed,
+            "entries": [
+                {
+                    "id": 7,
+                    "planned_date": "2026-07-22",
+                    "meal_type": "dinner",
+                    "servings": 2,
+                    "notes": None,
+                    "recipe_identifier": "pasta-pesto",
+                    "recipe_title": "Pasta pesto",
+                    "preparation_time_minutes": 25,
+                    "source": "generated",
+                }
+            ],
+        },
+        "unfilled_slots": [
+            {
+                "planned_date": "2026-07-23",
+                "meal_type": "dinner",
+                "reason": "Geen kandidaten",
+            }
+        ],
+        "selection_explanations": [
+            {
+                "planned_date": "2026-07-22",
+                "meal_type": "dinner",
+                "recipe_identifier": "pasta-pesto",
+                "score": 8.5,
+                "reasons": ["Snel"],
+            }
+        ],
+        "generation_seed": seed,
+    }
+
+
+def test_generate_meal_plan_sends_preferences_and_parses_preview() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url == "http://api.test/meal-plans/generate"
+        payload = json.loads(request.content)
+        assert payload["start_date"] == "2026-07-22"
+        assert payload["servings"] == 4
+        assert payload["vegetarian_days"] == [3, 6]
+        assert payload["max_preparation_time_weekday"] == 35
+        assert payload["created_by"] == "123"
+        return httpx.Response(201, json=generated_plan_payload())
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+    result = asyncio.run(
+        client.generate_meal_plan(
+            start_date=date(2026, 7, 22),
+            servings=4,
+            max_preparation_time_weekday=35,
+            vegetarian_days=[3, 6],
+            random_seed=123,
+            created_by="123",
+        )
+    )
+
+    assert result.plan.status == "draft"
+    assert result.plan.entries[0].preparation_time_minutes == 25
+    assert result.unfilled_slots[0].planned_date == date(2026, 7, 23)
+    assert result.selection_explanations[0].score == 8.5
+
+
+def test_generated_plan_action_client_methods_use_correct_endpoints() -> None:
+    requests: list[tuple[str, str, dict | None]] = []
+
+    def handler(request: httpx.Request) -> httpx.Response:
+        payload = json.loads(request.content) if request.content else None
+        requests.append((request.method, str(request.url), payload))
+        if request.method == "DELETE":
+            return httpx.Response(204)
+        if request.url.path.endswith("/activate"):
+            plan = generated_plan_payload()["plan"]
+            plan["status"] = "active"
+            return httpx.Response(200, json=plan)
+        return httpx.Response(200, json=generated_plan_payload(seed=999))
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+    active = asyncio.run(client.activate_meal_plan(plan_id=42, activated_by="123"))
+    regenerated = asyncio.run(client.regenerate_meal_plan(plan_id=42, random_seed=999))
+    rerolled = asyncio.run(
+        client.reroll_meal_plan_entry(
+            plan_id=42,
+            entry_id=7,
+            random_seed=999,
+        )
+    )
+    asyncio.run(client.cancel_meal_plan_draft(plan_id=42))
+
+    assert active.status == "active"
+    assert regenerated.generation_seed == 999
+    assert rerolled.plan.entries[0].source == "generated"
+    assert requests == [
+        (
+            "POST",
+            "http://api.test/meal-plans/42/activate",
+            {"activated_by": "123"},
+        ),
+        (
+            "POST",
+            "http://api.test/meal-plans/42/regenerate",
+            {"random_seed": 999},
+        ),
+        (
+            "POST",
+            "http://api.test/meal-plans/42/entries/7/reroll",
+            {"random_seed": 999},
+        ),
+        ("DELETE", "http://api.test/meal-plans/42", None),
+    ]

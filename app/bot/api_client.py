@@ -50,6 +50,9 @@ class MealPlanEntry:
     notes: str | None
     recipe_identifier: str
     recipe_title: str
+    preparation_time_minutes: int | None = None
+    source: str = "manual"
+    source_entry_id: int | None = None
 
 
 @dataclass(slots=True)
@@ -59,6 +62,32 @@ class MealPlan:
     end_date: date
     name: str | None
     entries: list[MealPlanEntry]
+    status: str = "active"
+    generation_seed: int | None = None
+
+
+@dataclass(slots=True)
+class UnfilledMealPlanSlot:
+    planned_date: date
+    meal_type: str
+    reason: str
+
+
+@dataclass(slots=True)
+class MealPlanSelectionExplanation:
+    planned_date: date
+    meal_type: str
+    recipe_identifier: str
+    score: float
+    reasons: list[str]
+
+
+@dataclass(slots=True)
+class GeneratedMealPlan:
+    plan: MealPlan
+    unfilled_slots: list[UnfilledMealPlanSlot]
+    selection_explanations: list[MealPlanSelectionExplanation]
+    generation_seed: int
 
 
 def _parse_import_response(
@@ -454,6 +483,102 @@ class RecipeApiClient:
         response.raise_for_status()
         return _parse_meal_plan(response.json())
 
+    async def generate_meal_plan(
+        self,
+        *,
+        start_date: date | None = None,
+        servings: int = 2,
+        max_preparation_time_weekday: int | None = None,
+        vegetarian_days: list[int] | None = None,
+        avoid_recent_days: int = 21,
+        random_seed: int | None = None,
+        created_by: str | None = None,
+    ) -> GeneratedMealPlan:
+        endpoint = f"{self.base_url}/meal-plans/generate"
+        payload: dict[str, Any] = {
+            "servings": servings,
+            "vegetarian_days": vegetarian_days or [],
+            "avoid_recent_days": avoid_recent_days,
+            "created_by": created_by,
+        }
+        if start_date is not None:
+            payload["start_date"] = start_date.isoformat()
+        if max_preparation_time_weekday is not None:
+            payload["max_preparation_time_weekday"] = max_preparation_time_weekday
+        if random_seed is not None:
+            payload["random_seed"] = random_seed
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(endpoint, json=payload)
+        response.raise_for_status()
+        return _parse_generated_meal_plan(response.json())
+
+    async def activate_meal_plan(
+        self,
+        *,
+        plan_id: int,
+        activated_by: str | None = None,
+    ) -> MealPlan:
+        endpoint = f"{self.base_url}/meal-plans/{plan_id}/activate"
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={"activated_by": activated_by},
+            )
+        response.raise_for_status()
+        return _parse_meal_plan(response.json())
+
+    async def regenerate_meal_plan(
+        self,
+        *,
+        plan_id: int,
+        random_seed: int | None = None,
+    ) -> GeneratedMealPlan:
+        endpoint = f"{self.base_url}/meal-plans/{plan_id}/regenerate"
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={"random_seed": random_seed},
+            )
+        response.raise_for_status()
+        return _parse_generated_meal_plan(response.json())
+
+    async def cancel_meal_plan_draft(self, *, plan_id: int) -> None:
+        endpoint = f"{self.base_url}/meal-plans/{plan_id}"
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.delete(endpoint)
+        response.raise_for_status()
+
+    async def reroll_meal_plan_entry(
+        self,
+        *,
+        plan_id: int,
+        entry_id: int,
+        random_seed: int | None = None,
+    ) -> GeneratedMealPlan:
+        endpoint = f"{self.base_url}/meal-plans/{plan_id}/entries/{entry_id}/reroll"
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={"random_seed": random_seed},
+            )
+        response.raise_for_status()
+        return _parse_generated_meal_plan(response.json())
+
 
 def _parse_meal_plan(
     payload: dict[str, Any],
@@ -467,6 +592,9 @@ def _parse_meal_plan(
             notes=item.get("notes"),
             recipe_identifier=item["recipe_identifier"],
             recipe_title=item["recipe_title"],
+            preparation_time_minutes=item.get("preparation_time_minutes"),
+            source=item.get("source", "manual"),
+            source_entry_id=item.get("source_entry_id"),
         )
         for item in payload.get("entries", [])
     ]
@@ -477,4 +605,31 @@ def _parse_meal_plan(
         end_date=date.fromisoformat(payload["end_date"]),
         name=payload.get("name"),
         entries=entries,
+        status=payload.get("status", "active"),
+        generation_seed=payload.get("generation_seed"),
+    )
+
+
+def _parse_generated_meal_plan(payload: dict[str, Any]) -> GeneratedMealPlan:
+    return GeneratedMealPlan(
+        plan=_parse_meal_plan(payload["plan"]),
+        unfilled_slots=[
+            UnfilledMealPlanSlot(
+                planned_date=date.fromisoformat(item["planned_date"]),
+                meal_type=item["meal_type"],
+                reason=item["reason"],
+            )
+            for item in payload.get("unfilled_slots", [])
+        ],
+        selection_explanations=[
+            MealPlanSelectionExplanation(
+                planned_date=date.fromisoformat(item["planned_date"]),
+                meal_type=item["meal_type"],
+                recipe_identifier=item["recipe_identifier"],
+                score=item["score"],
+                reasons=item.get("reasons", []),
+            )
+            for item in payload.get("selection_explanations", [])
+        ],
+        generation_seed=payload["generation_seed"],
     )

@@ -7,10 +7,43 @@ from discord import app_commands
 from discord.ext import commands
 
 from app.bot.api_client import RecipeApiClient
-from app.bot.embeds import build_meal_plan_embed
+from app.bot.embeds import (
+    build_generated_meal_plan_embed,
+    build_meal_plan_embed,
+)
 from app.bot.meal_plan_errors import get_meal_plan_error_message
+from app.bot.meal_plan_views import GeneratedMealPlanView
 
 logger = logging.getLogger(__name__)
+
+WEEKDAY_ALIASES = {
+    "ma": 0,
+    "mon": 0,
+    "di": 1,
+    "tue": 1,
+    "wo": 2,
+    "wed": 2,
+    "do": 3,
+    "thu": 3,
+    "vr": 4,
+    "fri": 4,
+    "za": 5,
+    "sat": 5,
+    "zo": 6,
+    "sun": 6,
+}
+
+
+def parse_weekdays(value: str | None) -> list[int]:
+    if value is None or not value.strip():
+        return []
+    weekdays: set[int] = set()
+    for raw_day in value.split(","):
+        day = raw_day.strip().casefold()
+        if day not in WEEKDAY_ALIASES:
+            raise ValueError(f"Unknown weekday: {raw_day.strip()}")
+        weekdays.add(WEEKDAY_ALIASES[day])
+    return sorted(weekdays)
 
 
 def get_planning_start_date(
@@ -293,5 +326,105 @@ class WeekCommands(commands.Cog):
         await interaction.followup.send(
             content=f"Planning-entry `{entry_id}` is verwijderd.",
             embed=build_meal_plan_embed(meal_plan),
+            ephemeral=True,
+        )
+
+    @week.command(
+        name="genereer",
+        description="Maak automatisch een voorstel voor de weekplanning",
+    )
+    @app_commands.describe(
+        startdatum="Optionele startdatum in formaat JJJJ-MM-DD",
+        porties="Aantal personen",
+        max_werktijd="Maximale bereidingstijd op werkdagen",
+        vegetarische_dagen="Kommalijst, bijvoorbeeld do,zo",
+        recente_recepten_vermijden="Aantal dagen zonder recente recepten",
+    )
+    @app_commands.checks.cooldown(
+        2,
+        60.0,
+        key=lambda interaction: interaction.user.id,
+    )
+    async def generate_week(
+        self,
+        interaction: discord.Interaction,
+        startdatum: str | None = None,
+        porties: app_commands.Range[int, 1, 50] = 2,
+        max_werktijd: app_commands.Range[int, 0, 600] | None = None,
+        vegetarische_dagen: str | None = None,
+        recente_recepten_vermijden: app_commands.Range[int, 0, 3650] = 21,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            parsed_start_date = (
+                date.fromisoformat(startdatum) if startdatum is not None else None
+            )
+            parsed_vegetarian_days = parse_weekdays(vegetarische_dagen)
+        except ValueError:
+            await interaction.followup.send(
+                (
+                    "De datum of vegetarische dagen zijn ongeldig. Gebruik "
+                    "`JJJJ-MM-DD` en dagen zoals `ma,di,wo,do,vr,za,zo`."
+                ),
+                ephemeral=True,
+            )
+            return
+
+        try:
+            result = await self.api_client.generate_meal_plan(
+                start_date=parsed_start_date,
+                servings=porties,
+                max_preparation_time_weekday=max_werktijd,
+                vegetarian_days=parsed_vegetarian_days,
+                avoid_recent_days=recente_recepten_vermijden,
+                created_by=str(interaction.user.id),
+            )
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
+            return
+
+        view = GeneratedMealPlanView(
+            api_client=self.api_client,
+            result=result,
+            owner_id=interaction.user.id,
+        )
+        await interaction.followup.send(
+            embed=build_generated_meal_plan_embed(result),
+            view=view,
+            ephemeral=True,
+        )
+
+    @week.command(
+        name="vervang",
+        description="Kies opnieuw voor één gegenereerde planning-entry",
+    )
+    @app_commands.describe(
+        voorstel_id="Het planning-ID van het voorstel",
+        entry_id="Het entry-ID uit het voorstel",
+    )
+    async def reroll_entry(
+        self,
+        interaction: discord.Interaction,
+        voorstel_id: int,
+        entry_id: int,
+    ) -> None:
+        await interaction.response.defer(ephemeral=True)
+        try:
+            result = await self.api_client.reroll_meal_plan_entry(
+                plan_id=voorstel_id,
+                entry_id=entry_id,
+            )
+        except httpx.HTTPError as exc:
+            await self._send_api_error(interaction, exc)
+            return
+        view = GeneratedMealPlanView(
+            api_client=self.api_client,
+            result=result,
+            owner_id=interaction.user.id,
+        )
+        await interaction.followup.send(
+            content=f"Planning-entry `{entry_id}` heeft een nieuw recept.",
+            embed=build_generated_meal_plan_embed(result),
+            view=view,
             ephemeral=True,
         )

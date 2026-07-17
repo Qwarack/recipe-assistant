@@ -13,6 +13,13 @@ servings: 4
 prep_time_minutes: null
 cook_time_minutes: null
 total_time_minutes: null
+preparation_time_minutes: null
+difficulty: unknown
+vegetarian: null
+vegan: null
+suitable_for_leftovers: false
+leftover_servings: null
+leftover_days: 1
 meal_types:
 - dinner
 tags:

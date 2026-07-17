@@ -14,19 +14,25 @@ def test_meal_plan_has_expected_columns() -> None:
         "id",
         "start_date",
         "name",
+        "status",
+        "generation_seed",
+        "generated_at",
+        "generation_config",
+        "created_by",
+        "activated_by",
+        "generation_source",
         "created_at",
         "updated_at",
     }
 
 
-def test_meal_plan_week_start_is_unique() -> None:
-    constraints = MealPlanRecord.__table__.constraints
+def test_active_meal_plan_week_start_is_unique() -> None:
+    index = next(
+        item
+        for item in MealPlanRecord.__table__.indexes
+        if item.name == "uq_active_meal_plan_start_date"
+    )
 
-    unique_column_sets = {
-        tuple(column.name for column in constraint.columns)
-        for constraint in constraints
-        if hasattr(constraint, "columns")
-        and constraint.__class__.__name__ == "UniqueConstraint"
-    }
-
-    assert ("start_date",) in unique_column_sets
+    assert index.unique is True
+    assert tuple(column.name for column in index.columns) == ("start_date",)
+    assert str(index.dialect_options["sqlite"]["where"]) == "status = 'active'"

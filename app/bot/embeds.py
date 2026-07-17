@@ -1,6 +1,11 @@
 import discord
 
-from app.bot.api_client import MealPlan, RecipeDetail, RecipeImportResponse
+from app.bot.api_client import (
+    GeneratedMealPlan,
+    MealPlan,
+    RecipeDetail,
+    RecipeImportResponse,
+)
 from app.bot.text_utils import split_text
 
 DUTCH_WEEKDAYS = {
@@ -240,6 +245,8 @@ def build_meal_plan_embed(
             f"Entry-ID: `{entry.id}`\n"
             f"Recept-ID: `{_truncate(entry.recipe_identifier, 64)}`"
         )
+        if entry.preparation_time_minutes is not None:
+            field_value += f"\nBereiding: {entry.preparation_time_minutes} min"
 
         embed.add_field(
             name=_truncate(field_name, 256),
@@ -248,5 +255,33 @@ def build_meal_plan_embed(
         )
 
     embed.set_footer(text=f"Planning-ID: {meal_plan.id}")
+
+    return embed
+
+
+def build_generated_meal_plan_embed(
+    result: GeneratedMealPlan,
+) -> discord.Embed:
+    embed = build_meal_plan_embed(result.plan)
+    status_label = "Voorstel" if result.plan.status == "draft" else "Actief"
+    embed.title = f"{status_label}: {embed.title}"
+    embed.description = (
+        f"Status: **{result.plan.status}**\n"
+        f"{embed.description or ''}\n"
+        f"Generation seed: `{result.generation_seed}`"
+    )
+
+    for slot in result.unfilled_slots:
+        weekday = DUTCH_WEEKDAYS[slot.planned_date.weekday()]
+        embed.add_field(
+            name=f"⚠ {weekday} {slot.planned_date:%d-%m} niet gevuld",
+            value=_truncate(slot.reason, 1024),
+            inline=False,
+        )
+
+    if result.unfilled_slots:
+        embed.color = discord.Color.orange()
+    elif result.plan.status == "active":
+        embed.color = discord.Color.green()
 
     return embed

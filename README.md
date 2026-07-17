@@ -2,7 +2,7 @@
 
 Self-hosted receptenimporter voor een homelabomgeving. De applicatie zet recepten uit verschillende bronnen om naar een gevalideerd `Recipe`-model en slaat ze op als consistente Markdown-bestanden met YAML-frontmatter.
 
-De huidige versie omvat **fase 1, 2 en 3** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Fase 3 maakt handmatig plannen, bekijken, wijzigen en verwijderen van recepten mogelijk.
+De huidige versie omvat **fase 1 t/m 4** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Naast import en handmatige planning ondersteunt de applicatie reproduceerbare automatische weekvoorstellen.
 
 ## Huidige functionaliteit
 
@@ -174,6 +174,86 @@ curl -X PATCH \
 curl -X DELETE \
   http://127.0.0.1:8000/meal-plans/2026-07-15/entries/42
 ```
+
+## Automatische maaltijdplanning (fase 4)
+
+Fase 4 kan een reproduceerbaar weekvoorstel genereren. Een voorstel wordt altijd als `draft` opgeslagen en overschrijft een actieve of handmatige planning niet. Na expliciet accepteren wordt het voorstel `active`; een eerdere actieve planning voor dezelfde startdatum krijgt de status `archived` en blijft bewaard.
+
+De standaardperiode loopt van de meest recente woensdag tot en met dinsdag. `start_date` kan dit vervangen. Weekdagen in de API gebruiken `0 = maandag` tot en met `6 = zondag`. Zonder `days_to_plan` worden alle zeven dagen gevuld; een expliciet lege lijst plant geen dagen.
+
+Ondersteunde voorkeuren zijn onder andere:
+
+- aantal porties en maaltijdtype;
+- maximale bereidingstijd voor werk- en weekenddagen;
+- vegetarische dagen;
+- verplichte en uitgesloten tags;
+- expliciet uitgesloten recepten;
+- vermijden van recent geplande recepten;
+- wel of geen herhaling binnen één voorstel;
+- bestaande entries behouden;
+- ongevulde slots bij activatie toestaan;
+- een vaste `random_seed` voor reproduceerbare selectie.
+
+Harde filters bepalen welke recepten geschikt zijn. Losse scoringsregels geven vervolgens voorkeur aan lang niet geplande recepten, snelle werkdagmaaltijden, passende moeilijkheid en tagvariatie. Bij een gelijke hoogste score beslist een lokale randomgenerator op basis van de seed. De globale randomstate wordt niet gebruikt.
+
+Wanneer geen recept aan de filters voldoet, blijft alleen dat slot ongevuld en bevat de response een concrete waarschuwing. Standaard kan zo'n voorstel niet worden geactiveerd. Zet `allow_unfilled_slots` alleen bewust op `true` om dit toe te staan.
+
+Discord biedt:
+
+- `/week genereer` met startdatum, porties, maximale werktijd, vegetarische dagen en een recencyvenster;
+- knoppen **Accepteren**, **Opnieuw genereren** en **Annuleren** onder de preview;
+- `/week vervang` om één gegenereerde entry opnieuw te selecteren.
+
+Voor vegetarische dagen accepteert Discord zowel `ma,di,wo,do,vr,za,zo` als `mon,tue,wed,thu,fri,sat,sun`. Alleen de gebruiker die het voorstel genereerde kan de actieknoppen bedienen.
+
+### Generatie-API
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/meal-plans/generate \
+  -H "Content-Type: application/json" \
+  -d '{
+    "start_date": "2026-07-22",
+    "servings": 2,
+    "max_preparation_time_weekday": 35,
+    "vegetarian_days": [3],
+    "avoid_recent_days": 21,
+    "random_seed": 12345
+  }'
+```
+
+Een draft activeren:
+
+```bash
+curl -X POST \
+  http://127.0.0.1:8000/meal-plans/42/activate
+```
+
+Verder beschikbaar:
+
+```text
+POST   /meal-plans/{plan_id}/regenerate
+POST   /meal-plans/{plan_id}/entries/{entry_id}/reroll
+DELETE /meal-plans/{plan_id}
+```
+
+De seed is geen beveiligingswaarde; hij legt alleen de tie-breaking vast zodat hetzelfde receptaanbod en dezelfde configuratie hetzelfde voorstel opleveren.
+
+### Receptmetadata voor planning
+
+De SQLite-index synchroniseert `tags`, `meal_types`, `preparation_time_minutes`, `difficulty`, `servings`, `vegetarian`, `vegan` en leftoversmetadata uit YAML-frontmatter. Ontbrekende maaltijdtypes worden `dinner`, ontbrekende moeilijkheid wordt `unknown` en ontbrekende porties worden `2`. Voor vegetarisch en veganistisch blijft `null` bewust “onbekend”; dit is niet hetzelfde als `false` en voldoet niet aan een harde vegetarische-dagfilter.
+
+`enable_leftovers` en metadata zoals `suitable_for_leftovers`, `leftover_servings` en `leftover_days` zijn voorbereid. Automatisch aanmaken van leftovers-entries staat in fase 4 uit, omdat bestaande recepten nog niet betrouwbaar genoeg aangeven hoeveel porties werkelijk overblijven. Een request met `enable_leftovers=true` wordt daarom expliciet met 422 geweigerd in plaats van stilzwijgend genegeerd.
+
+### Database migreren en auditvelden
+
+Voer na een update de Alembic-migratie uit:
+
+```bash
+uv run alembic upgrade head
+```
+
+Drafts bewaren hun generatieconfiguratie, seed en generatietijd. Wanneer Discord de actie uitvoert worden `created_by` en `activated_by` gevuld met de Discord-user-ID als tekst. Deze IDs worden uitsluitend gebruikt voor audit en autorisatie van de voorstelactie; tokens en overige profielgegevens worden niet opgeslagen.
 
 ## Applicatie lokaal starten
 
@@ -466,7 +546,7 @@ De website-importer leest geen `file://`-URL's. Lokale bestanden worden uitsluit
 
 ## Huidige projectfase
 
-Fase 1 t/m 3 zijn functioneel compleet voor de huidige scope:
+Fase 1 t/m 4 zijn functioneel compleet voor de huidige scope:
 
 - Website-import.
 - Fallbackextractie.
@@ -478,6 +558,7 @@ Fase 1 t/m 3 zijn functioneel compleet voor de huidige scope:
 - Tests en integratiechecks.
 - Discord als primaire invoerinterface.
 - Handmatige weekplanning met toevoegen, tonen, wijzigen en verwijderen.
+- Automatische, deterministische weekvoorstellen met draft- en activatieworkflow.
 
 ## Langetermijndoel
 

@@ -1,7 +1,8 @@
 from datetime import date, datetime
+from enum import StrEnum
 from typing import TYPE_CHECKING
 
-from sqlalchemy import Date, DateTime, String, UniqueConstraint, func
+from sqlalchemy import JSON, Date, DateTime, Index, Integer, String, func, text
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -12,12 +13,20 @@ if TYPE_CHECKING:
     )
 
 
+class MealPlanStatus(StrEnum):
+    DRAFT = "draft"
+    ACTIVE = "active"
+    ARCHIVED = "archived"
+
+
 class MealPlanRecord(Base):
     __tablename__ = "meal_plans"
     __table_args__ = (
-        UniqueConstraint(
+        Index(
+            "uq_active_meal_plan_start_date",
             "start_date",
-            name="uq_meal_plans_start_date",
+            unique=True,
+            sqlite_where=text("status = 'active'"),
         ),
     )
 
@@ -34,6 +43,43 @@ class MealPlanRecord(Base):
 
     name: Mapped[str | None] = mapped_column(
         String(255),
+        nullable=True,
+    )
+
+    status: Mapped[str] = mapped_column(
+        String(20),
+        nullable=False,
+        default=MealPlanStatus.ACTIVE.value,
+        index=True,
+    )
+
+    generation_seed: Mapped[int | None] = mapped_column(
+        Integer,
+        nullable=True,
+    )
+
+    generated_at: Mapped[datetime | None] = mapped_column(
+        DateTime(timezone=True),
+        nullable=True,
+    )
+
+    generation_config: Mapped[dict[str, object] | None] = mapped_column(
+        JSON,
+        nullable=True,
+    )
+
+    created_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    activated_by: Mapped[str | None] = mapped_column(
+        String(64),
+        nullable=True,
+    )
+
+    generation_source: Mapped[str | None] = mapped_column(
+        String(50),
         nullable=True,
     )
 
