@@ -10,7 +10,7 @@ class Settings(BaseSettings):
     environment: str = "development"
     log_level: str = "INFO"
     recipes_path: Path = Path("data/recipes")
-    database_path: Path = Path("data/database/recipes.db")
+    database_path: Path = Path("data/database/app.db")
     imports_path: Path = Path("/data/imports")
     api_base_url: str = "http://127.0.0.1:8000"
     discord_allowed_role_ids: str | None = None

@@ -122,3 +122,84 @@ def test_delete_recipe(
         result = repository.get_by_identifier("pasta-carbonara")
 
         assert result is None
+
+
+def test_search_recipes_by_title(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = RecipeRepository(session)
+
+        repository.add(
+            RecipeRecord(
+                identifier="pasta-carbonara",
+                title="Pasta Carbonara",
+                file_path="data/recipes/pasta-carbonara.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        repository.add(
+            RecipeRecord(
+                identifier="pasta-pesto",
+                title="Pasta Pesto",
+                file_path="data/recipes/pasta-pesto.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+        repository.add(
+            RecipeRecord(
+                identifier="tomatensoep",
+                title="Tomatensoep",
+                file_path="data/recipes/tomatensoep.md",
+                source_url=None,
+                content_hash=None,
+            )
+        )
+
+        session.commit()
+
+        results = repository.search_by_title("pasta")
+
+        assert [recipe.title for recipe in results] == [
+            "Pasta Carbonara",
+            "Pasta Pesto",
+        ]
+
+
+def test_search_recipes_respects_limit(
+    tmp_path: Path,
+) -> None:
+    session_factory = create_session_factory(tmp_path / "app.db")
+
+    engine = session_factory.kw["bind"]
+    Base.metadata.create_all(engine)
+
+    with session_factory() as session:
+        repository = RecipeRepository(session)
+
+        for index in range(5):
+            repository.add(
+                RecipeRecord(
+                    identifier=f"pasta-{index}",
+                    title=f"Pasta {index}",
+                    file_path=f"data/recipes/pasta-{index}.md",
+                    source_url=None,
+                    content_hash=None,
+                )
+            )
+
+        session.commit()
+
+        results = repository.search_by_title(
+            "pasta",
+            limit=2,
+        )
+
+        assert len(results) == 2

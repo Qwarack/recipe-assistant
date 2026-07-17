@@ -49,3 +49,23 @@ class RecipeRepository:
     ) -> None:
         self.session.delete(recipe)
         self.session.flush()
+
+    def search_by_title(
+        self,
+        query: str,
+        *,
+        limit: int = 10,
+    ) -> list[RecipeRecord]:
+        normalized_query = query.strip()
+
+        if not normalized_query:
+            return []
+
+        statement = (
+            select(RecipeRecord)
+            .where(RecipeRecord.title.ilike(f"%{normalized_query}%"))
+            .order_by(RecipeRecord.title.asc())
+            .limit(limit)
+        )
+
+        return list(self.session.scalars(statement))
