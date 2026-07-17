@@ -1,7 +1,7 @@
-from datetime import datetime
+from datetime import date, datetime
 from typing import TYPE_CHECKING
 
-from sqlalchemy import DateTime, String, Text, func
+from sqlalchemy import Date, DateTime, String, UniqueConstraint, func
 from sqlalchemy.orm import Mapped, mapped_column, relationship
 
 from app.database.base import Base
@@ -12,41 +12,28 @@ if TYPE_CHECKING:
     )
 
 
-class RecipeRecord(Base):
-    __tablename__ = "recipes"
+class MealPlanRecord(Base):
+    __tablename__ = "meal_plans"
+    __table_args__ = (
+        UniqueConstraint(
+            "start_date",
+            name="uq_meal_plans_start_date",
+        ),
+    )
 
     id: Mapped[int] = mapped_column(
         primary_key=True,
         autoincrement=True,
     )
 
-    identifier: Mapped[str] = mapped_column(
+    start_date: Mapped[date] = mapped_column(
+        Date,
+        nullable=False,
+        index=True,
+    )
+
+    name: Mapped[str | None] = mapped_column(
         String(255),
-        unique=True,
-        index=True,
-        nullable=False,
-    )
-
-    title: Mapped[str] = mapped_column(
-        String(255),
-        index=True,
-        nullable=False,
-    )
-
-    file_path: Mapped[str] = mapped_column(
-        Text,
-        unique=True,
-        nullable=False,
-    )
-
-    source_url: Mapped[str | None] = mapped_column(
-        Text,
-        nullable=True,
-    )
-
-    content_hash: Mapped[str | None] = mapped_column(
-        String(64),
-        index=True,
         nullable=True,
     )
 
@@ -63,6 +50,8 @@ class RecipeRecord(Base):
         nullable=False,
     )
 
-    meal_plan_entries: Mapped[list["MealPlanEntryRecord"]] = relationship(
-        back_populates="recipe",
+    entries: Mapped[list["MealPlanEntryRecord"]] = relationship(
+        back_populates="meal_plan",
+        cascade="all, delete-orphan",
+        order_by="MealPlanEntryRecord.planned_date",
     )
