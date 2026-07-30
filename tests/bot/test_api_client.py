@@ -228,6 +228,78 @@ def test_import_uploaded_recipe_sends_multipart_file_and_force_flag() -> None:
     assert result.destination == "/data/recipes/pasta.md"
 
 
+def test_parse_import_with_ai_sends_reason_and_user() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == (
+            "/imports/11111111-1111-1111-1111-111111111111/parse-ai"
+        )
+        assert json.loads(request.content) == {
+            "reason": "user_requested_reparse",
+            "discord_user_id": 123,
+        }
+        return httpx.Response(
+            200,
+            json={
+                "import_id": "11111111-1111-1111-1111-111111111111",
+                "status": "success",
+                "destination": None,
+                "recipe": None,
+                "warnings": [],
+                "metadata": {
+                    "parse_method": "ai_reparse",
+                    "ai_model": "gemma3:4b",
+                },
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.parse_import_with_ai(
+            "11111111-1111-1111-1111-111111111111",
+            reason="user_requested_reparse",
+            discord_user_id=123,
+        )
+    )
+
+    assert result.metadata is not None
+    assert result.metadata.parse_method == "ai_reparse"
+    assert result.metadata.ai_model == "gemma3:4b"
+
+
+def test_failed_preview_response_remains_retryable() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        return httpx.Response(
+            422,
+            json={
+                "detail": {
+                    "import_id": "22222222-2222-2222-2222-222222222222",
+                    "warnings": [
+                        {
+                            "code": "recipe_extraction_failed",
+                            "message": "No recipe found.",
+                        }
+                    ],
+                }
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(client.preview_website_recipe("https://example.com/no-recipe"))
+
+    assert result.status == "failed"
+    assert result.ai_enabled is True
+    assert result.import_id == "22222222-2222-2222-2222-222222222222"
+
+
 def test_get_current_meal_plan() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         assert request.method == "GET"

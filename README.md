@@ -134,6 +134,101 @@ IMPORTS_PATH=./data/imports
 
 `APP_TIMEZONE` bepaalt welke lokale kalenderdatum voor de actuele planning wordt gebruikt. De standaard is `Europe/Amsterdam`.
 
+## Lokale AI met Gemma
+
+Ollama en Gemma vormen een optionele lokale laag boven op de bestaande
+parsers. Website-, tekst-, HTML- en Markdown-parsers blijven altijd de
+standaardroute. Gemma wordt alleen gebruikt voor een handmatige fallback of
+herparse, voor afbeeldingsinput en voor het voorzichtig aanvullen van
+ontbrekende metadata. Een AI-resultaat wordt met Pydantic gevalideerd en pas
+na een Discord-preview en expliciete bevestiging opgeslagen.
+
+Start de Compose-stack en download het model eenmalig:
+
+```bash
+docker compose up -d
+docker compose exec ollama ollama pull gemma3:4b
+```
+
+Het model staat in het persistente volume `ollama_data`; het pull-commando
+hoeft dus niet bij iedere start opnieuw te worden uitgevoerd. Poort 11434
+wordt niet naar de host gepubliceerd. De API bereikt Ollama alleen via
+`http://ollama:11434` op het interne Compose-netwerk.
+
+Belangrijkste instellingen:
+
+```env
+AI_ENABLED=true
+OLLAMA_BASE_URL=http://ollama:11434
+OLLAMA_MODEL=gemma3:4b
+OLLAMA_TIMEOUT_SECONDS=120
+OLLAMA_MAX_RETRIES=1
+AI_ENRICH_MISSING_FIELDS=true
+AI_ALLOW_INGREDIENT_QUANTITY_ESTIMATES=false
+AI_ALLOW_TEMPERATURE_ESTIMATES=false
+MAX_IMAGE_UPLOAD_BYTES=10485760
+MAX_IMAGE_DIMENSION=2048
+MAX_AI_SOURCE_CHARACTERS=50000
+MAX_AI_PROMPT_CHARACTERS=65000
+```
+
+Normale imports blijven werken wanneer `AI_ENABLED=false`, Ollama offline is
+of het model nog niet is geïnstalleerd. Alleen AI-acties geven dan een gerichte
+foutmelding. Zie [de Gemma-importarchitectuur](docs/gemma-import-architecture.md)
+voor de hergebruikte componenten en de gekozen grens tussen preview en opslag.
+
+Probleemoplossing:
+
+- `docker compose ps` toont of de Ollama-container gezond is.
+- `docker compose logs ollama` toont model- en runtimefouten.
+- `docker compose exec ollama ollama list` controleert of `gemma3:4b`
+  beschikbaar is.
+- Zet `AI_ENABLED=false` om alle AI-knoppen en AI-endpoints tijdelijk uit te
+  schakelen zonder normale imports te blokkeren.
+
+Rollback: zet `AI_ENABLED=false` en start `api` en `bot` opnieuw. Omdat deze
+stap geen databasekolommen toevoegt, is geen databasemigratie of downgrade
+nodig.
+
+Nieuwe Discord-interacties:
+
+- Na een normale preview staat `Parse met AI`; het normale resultaat blijft
+  beschikbaar totdat Gemma met succes een nieuwe preview heeft gemaakt.
+- Na een mislukte normale parse staan `Opnieuw met AI` en `Annuleren`.
+- `/recept upload` accepteert naast tekstbestanden één JPEG-, PNG- of
+  WebP-afbeelding van maximaal 10 MB. Afbeeldingen worden naar maximaal 2048
+  pixels verkleind, met EXIF-rotatie gecorrigeerd en daarna door Gemma
+  verwerkt.
+- Een AI-preview toont het gebruikte model, geschatte velden, nog ontbrekende
+  velden en waarschuwingen. `Opslaan` blijft altijd een expliciete stap.
+
+De bot gebruikt hiervoor:
+
+```text
+POST /imports/{import_id}/parse-ai
+POST /imports/{import_id}/confirm
+POST /imports/{import_id}/cancel
+GET  /imports/{import_id}
+POST /imports/upload/preview
+```
+
+Handmatige controle:
+
+1. Start Compose en pull `gemma3:4b`.
+2. Importeer een geldige recepten-URL en controleer de normale preview.
+3. Kies `Parse met AI`, controleer de herkomstregel en bevestig de nieuwe
+   preview.
+4. Upload een screenshot via `/recept upload` en controleer dat opslaan pas
+   na bevestiging plaatsvindt.
+5. Stop `ollama`, start nogmaals een AI-actie en controleer de begrijpelijke
+   foutmelding; een normale preview moet intact blijven.
+6. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
+   onder `IMPORTS_PATH/pending-images` verdwijnt.
+
+Bekende beperking: importsessies zijn proceslokaal. Een API-herstart maakt
+nog niet bevestigde previews ongeldig. Definitieve recepten en het
+Ollama-modelvolume blijven wel bewaard.
+
 ## Weekplanning (fase 3)
 
 Alle datums gebruiken het formaat `JJJJ-MM-DD`. Een planning omvat zeven dagen. Wanneer `/week plan` geen startdatum krijgt, berekent de bot de meest recente woensdag vanaf de gekozen eetdatum; zo loopt de standaardperiode van woensdag t/m dinsdag. Een expliciete startdatum blijft mogelijk.

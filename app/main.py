@@ -4,6 +4,7 @@ from contextlib import asynccontextmanager
 
 from fastapi import FastAPI
 
+from app.api.ai_imports import router as ai_imports_router
 from app.api.health import router as health_router
 from app.api.imports import router as imports_router
 from app.api.meal_plans import router as meal_plans_router
@@ -40,6 +41,7 @@ app = FastAPI(
 
 app.include_router(health_router)
 app.include_router(imports_router)
+app.include_router(ai_imports_router)
 app.include_router(meal_plans_router)
 app.include_router(search_router)
 app.include_router(uploads_router)
