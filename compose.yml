@@ -8,13 +8,15 @@ services:
     ports:
       - "8000:8000"
     volumes:
-      - ./data/recipes:/data/recipes
+      - /srv/obsidian/ReceptenVault:/data/vault
       - ./data/database:/data/database
       - ./data/imports:/data/imports
     environment:
       AI_ENABLED: ${AI_ENABLED:-true}
       OLLAMA_BASE_URL: http://ollama:11434
       OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:4b}
+      RECIPES_PATH: /data/vault
+      VAULT_PATH: /data/vault
     restart: unless-stopped
     healthcheck:
       test:
@@ -41,6 +43,15 @@ services:
         condition: service_healthy
     volumes:
       - ./data:/app/data
+    restart: unless-stopped
+
+  obsidian-sync:
+    build:
+      context: ./obsidian-sync
+    container_name: obsidian-sync
+    volumes:
+      - /srv/obsidian/ReceptenVault:/vault
+      - /srv/obsidian/headless-config:/root/.config/obsidian-headless
     restart: unless-stopped
 
   ollama:

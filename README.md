@@ -137,7 +137,7 @@ New-Item -ItemType Directory -Force data/imports
 Voorbeeld `.env`:
 
 ```env
-RECIPES_PATH=/data/recipes
+RECIPES_PATH=/data/vault
 IMPORTS_PATH=/data/imports
 APP_TIMEZONE=Europe/Amsterdam
 ```
@@ -149,7 +149,9 @@ RECIPES_PATH=./data/recipes
 IMPORTS_PATH=./data/imports
 ```
 
-`RECIPES_PATH` bevat de gegenereerde Markdown-recepten.
+`RECIPES_PATH` bevat de gegenereerde Markdown-recepten. Docker Compose stelt dit
+pad in op `/data/vault`, gekoppeld aan
+`/srv/obsidian/ReceptenVault` op de host.
 
 `IMPORTS_PATH` bevat optioneel ruwe HTML van mislukte website-imports voor debugging.
 
@@ -744,6 +746,27 @@ GET /health
 
 ## Starten met Docker Compose
 
+Maak op de Docker-host eerst de gedeelde vault en de persistente configuratiemap
+voor Obsidian Headless aan:
+
+```bash
+sudo mkdir -p /srv/obsidian/ReceptenVault
+sudo mkdir -p /srv/obsidian/headless-config
+```
+
+Configureer Obsidian Headless eenmalig voordat de synchronisatieservice voor het
+eerst wordt gestart:
+
+```bash
+docker compose run --rm --build obsidian-sync ob login
+docker compose run --rm obsidian-sync \
+  ob sync-setup --vault "ReceptenVault" --path /vault
+```
+
+Vervang `ReceptenVault` bij het tweede commando door de exacte naam van de
+remote Obsidian Sync-vault. De login- en vaultconfiguratie blijven bewaard in
+`/srv/obsidian/headless-config`.
+
 Bouw en start de applicatie:
 
 ```bash
@@ -772,7 +795,11 @@ Stoppen:
 docker compose down
 ```
 
-De mappen onder `data/` worden als volumes gemount, zodat recepten en debugbestanden bewaard blijven na een containerrestart.
+De API en `obsidian-sync` gebruiken beide
+`/srv/obsidian/ReceptenVault`. Daardoor schrijft de applicatie recepten direct
+naar de vault die continu met Obsidian Sync wordt gesynchroniseerd. De lokale
+mappen onder `data/` bewaren de database en debugbestanden na een
+containerrestart.
 
 ## Website-recept importeren via de API
 
