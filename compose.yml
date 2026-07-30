@@ -11,6 +11,10 @@ services:
       - ./data/recipes:/data/recipes
       - ./data/database:/data/database
       - ./data/imports:/data/imports
+    environment:
+      AI_ENABLED: ${AI_ENABLED:-true}
+      OLLAMA_BASE_URL: http://ollama:11434
+      OLLAMA_MODEL: ${OLLAMA_MODEL:-gemma3:4b}
     restart: unless-stopped
     healthcheck:
       test:
@@ -38,3 +42,17 @@ services:
     volumes:
       - ./data:/app/data
     restart: unless-stopped
+
+  ollama:
+    image: ollama/ollama
+    restart: unless-stopped
+    volumes:
+      - ollama_data:/root/.ollama
+    healthcheck:
+      test: ["CMD-SHELL", "ollama list >/dev/null 2>&1 || exit 1"]
+      interval: 30s
+      timeout: 10s
+      retries: 5
+
+volumes:
+  ollama_data:
