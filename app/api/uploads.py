@@ -6,12 +6,16 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
+from app.api.ai_dependencies import get_import_session_repository
 from app.api.imports import build_recipe_preview, create_import_service
 from app.api.schemas.imports import WebsiteImportResponse
+from app.core.config import get_settings
 from app.importers.local_html import LocalHtmlRecipeImporter
 from app.importers.manual_text import ManualTextRecipeImporter
 from app.importers.markdown import MarkdownRecipeImporter
 from app.models.import_result import ImportResult, ImportStatus
+from app.models.import_session import ImportSession, ImportSource
+from app.models.recipe import SourceType
 from app.services.recipe_import_service import RecipeImportService
 
 router = APIRouter(
@@ -79,6 +83,26 @@ def _raise_for_failed_import(result: ImportResult) -> None:
     )
 
 
+def _register_upload_session(
+    *,
+    result: ImportResult,
+    extension: str,
+    text: str,
+    filename: str,
+    content_type: str | None,
+) -> ImportSession:
+    source_type = SourceType.MARKDOWN if extension == ".md" else SourceType.MANUAL
+    return get_import_session_repository().register(
+        result=result,
+        source=ImportSource(
+            source_type=source_type,
+            raw_text=text,
+            original_filename=filename,
+            content_type=content_type,
+        ),
+    )
+
+
 @router.post(
     "/preview",
     response_model=WebsiteImportResponse,
@@ -112,6 +136,13 @@ async def preview_uploaded_recipe(
         text=text,
         filename=filename,
     )
+    session = _register_upload_session(
+        result=result,
+        extension=extension,
+        text=text,
+        filename=filename,
+        content_type=file.content_type,
+    )
 
     _raise_for_failed_import(result)
 
@@ -122,6 +153,8 @@ async def preview_uploaded_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        metadata=session.metadata,
+        ai_enabled=get_settings().ai_enabled,
     )
 
 

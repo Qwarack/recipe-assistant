@@ -3,6 +3,7 @@ from typing import Annotated
 
 from fastapi import APIRouter, Depends, HTTPException, status
 
+from app.api.ai_dependencies import build_ai_import_orchestrator
 from app.api.dependencies import create_recipe_index_sync_service
 from app.api.schemas.imports import (
     ManualImportRequest,
@@ -15,6 +16,8 @@ from app.core.http_client import SafeHttpClient
 from app.importers.manual_text import ManualTextRecipeImporter
 from app.importers.website import WebsiteRecipeImporter
 from app.models.import_result import ImportResult, ImportStatus
+from app.models.import_session import ImportSource
+from app.models.recipe import SourceType
 from app.services.import_debug_storage import ImportDebugStorage
 from app.services.markdown_renderer import RecipeMarkdownRenderer
 from app.services.recipe_duplicate_detector import RecipeDuplicateDetector
@@ -82,8 +85,18 @@ def create_preview_service(
         http_client,
         debug_storage=debug_storage,
     )
+    orchestrator = (
+        build_ai_import_orchestrator(http_client) if settings.ai_enabled else None
+    )
 
-    return RecipePreviewService(importer=importer)
+    return RecipePreviewService(
+        importer=importer,
+        ai_orchestrator=orchestrator,
+        source_factory=lambda source: ImportSource(
+            source_type=SourceType.WEBSITE,
+            source_url=source,
+        ),
+    )
 
 
 def create_manual_import_service(
@@ -111,9 +124,22 @@ def create_manual_import_service(
     )
 
 
-def create_manual_preview_service() -> RecipePreviewService:
+def create_manual_preview_service(
+    http_client: Annotated[
+        SafeHttpClient,
+        Depends(get_http_client),
+    ],
+) -> RecipePreviewService:
+    settings = get_settings()
     return RecipePreviewService(
         importer=ManualTextRecipeImporter(),
+        ai_orchestrator=(
+            build_ai_import_orchestrator(http_client) if settings.ai_enabled else None
+        ),
+        source_factory=lambda source: ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text=source,
+        ),
     )
 
 
@@ -141,14 +167,18 @@ def build_recipe_preview(
     "/website/preview",
     response_model=WebsiteImportResponse,
 )
-def preview_website_recipe(
+async def preview_website_recipe(
     request: WebsiteImportRequest,
     service: Annotated[
         RecipePreviewService,
         Depends(create_preview_service),
     ],
 ) -> WebsiteImportResponse:
-    result = service.preview(str(request.url))
+    preview_with_enrichment = getattr(service, "preview_with_enrichment", None)
+    if callable(preview_with_enrichment):
+        result = await preview_with_enrichment(str(request.url))
+    else:
+        result = service.preview(str(request.url))
 
     if result.status is ImportStatus.FAILED:
         raise HTTPException(
@@ -156,6 +186,11 @@ def preview_website_recipe(
             detail={
                 "import_id": str(result.import_id),
                 "warnings": [warning.model_dump() for warning in result.warnings],
+                "metadata": (
+                    service.last_session.metadata.model_dump(mode="json")
+                    if getattr(service, "last_session", None) is not None
+                    else None
+                ),
             },
         )
 
@@ -166,6 +201,12 @@ def preview_website_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        metadata=(
+            service.last_session.metadata
+            if getattr(service, "last_session", None) is not None
+            else None
+        ),
+        ai_enabled=get_settings().ai_enabled,
     )
 
 
@@ -206,14 +247,18 @@ def import_website_recipe(
     "/manual/preview",
     response_model=WebsiteImportResponse,
 )
-def preview_manual_recipe(
+async def preview_manual_recipe(
     request: ManualImportRequest,
     service: Annotated[
         RecipePreviewService,
         Depends(create_manual_preview_service),
     ],
 ) -> WebsiteImportResponse:
-    result = service.preview(request.text)
+    preview_with_enrichment = getattr(service, "preview_with_enrichment", None)
+    if callable(preview_with_enrichment):
+        result = await preview_with_enrichment(request.text)
+    else:
+        result = service.preview(request.text)
 
     if result.status is ImportStatus.FAILED:
         raise HTTPException(
@@ -221,6 +266,11 @@ def preview_manual_recipe(
             detail={
                 "import_id": str(result.import_id),
                 "warnings": [warning.model_dump() for warning in result.warnings],
+                "metadata": (
+                    service.last_session.metadata.model_dump(mode="json")
+                    if getattr(service, "last_session", None) is not None
+                    else None
+                ),
             },
         )
 
@@ -231,6 +281,12 @@ def preview_manual_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        metadata=(
+            service.last_session.metadata
+            if getattr(service, "last_session", None) is not None
+            else None
+        ),
+        ai_enabled=get_settings().ai_enabled,
     )
 
 

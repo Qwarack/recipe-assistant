@@ -50,6 +50,14 @@ class RecipeImportService:
 
         return self._save_result(result, force=force)
 
+    def save_result(
+        self,
+        result: ImportResult,
+        *,
+        force: bool = False,
+    ) -> tuple[ImportResult, Path | None]:
+        return self._save_result(result, force=force)
+
     def _save_result(
         self,
         result: ImportResult,
