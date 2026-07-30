@@ -29,12 +29,34 @@ def build_recipe_import_embed(
     result: RecipeImportResponse,
 ) -> discord.Embed:
     if result.recipe is None:
-        return discord.Embed(
-            title="Receptimport voltooid",
+        embed = discord.Embed(
+            title=(
+                "Recept kon niet worden verwerkt"
+                if result.status == "failed"
+                else "Receptimport voltooid"
+            ),
             description=(
                 f"Status: **{result.status}**\nImport-ID: `{result.import_id}`"
             ),
         )
+
+        if result.warnings:
+            lines = [
+                f"â€¢ {warning.get('message', 'Onbekende importfout')}"
+                for warning in result.warnings
+            ]
+            for index, chunk in enumerate(split_text(lines), start=1):
+                embed.add_field(
+                    name=(
+                        "Waarom het mislukte"
+                        if index == 1
+                        else f"Waarom het mislukte ({index})"
+                    ),
+                    value=chunk,
+                    inline=False,
+                )
+
+        return embed
 
     recipe = result.recipe
 
@@ -45,6 +67,12 @@ def build_recipe_import_embed(
             f"Importstatus: **{result.status}**\nImport-ID: `{result.import_id}`"
         ),
     )
+
+    if result.metadata is not None:
+        parser_label = result.metadata.parser_name or "normale parser"
+        if result.metadata.ai_model is not None:
+            parser_label = result.metadata.ai_model
+        embed.description = f"{embed.description}\nVerwerkt met: **{parser_label}**"
 
     if recipe.servings is not None:
         embed.add_field(
@@ -101,6 +129,24 @@ def build_recipe_import_embed(
                 value=chunk,
                 inline=False,
             )
+
+    if result.metadata is not None and result.metadata.estimated_fields:
+        embed.add_field(
+            name="AI-geschat",
+            value="\n".join(
+                f"â€¢ {field_name}" for field_name in result.metadata.estimated_fields
+            )[:1024],
+            inline=False,
+        )
+
+    if result.metadata is not None and result.metadata.missing_fields:
+        embed.add_field(
+            name="Nog ontbrekend",
+            value="\n".join(
+                f"â€¢ {field_name}" for field_name in result.metadata.missing_fields
+            )[:1024],
+            inline=False,
+        )
 
     if result.destination is not None:
         embed.set_footer(text=f"Opgeslagen als: {result.destination}")

@@ -14,7 +14,12 @@ from app.bot.embeds import build_recipe_detail_embed, build_recipe_import_embed
 from app.bot.errors import handle_app_command_error
 from app.bot.modals import ManualRecipeModal
 from app.bot.url_utils import extract_first_url
-from app.bot.views import DetectedUrlView, RecipeDeleteView, RecipeImportView
+from app.bot.views import (
+    DetectedUrlView,
+    ImportFailedView,
+    RecipeDeleteView,
+    RecipeImportView,
+)
 from app.core.config import get_settings
 from app.core.logging import configure_logging
 
@@ -104,10 +109,61 @@ def create_bot() -> commands.Bot:
                 force=force,
             )
 
+        async def confirm_import(force: bool) -> RecipeImportResponse:
+            return await api_client.confirm_import(
+                result.import_id,
+                force=force,
+                discord_user_id=interaction.user.id,
+            )
+
+        async def parse_with_ai() -> RecipeImportResponse:
+            return await api_client.parse_import_with_ai(
+                result.import_id,
+                reason=(
+                    "normal_parse_failed"
+                    if result.status == "failed"
+                    else "user_requested_reparse"
+                ),
+                discord_user_id=interaction.user.id,
+            )
+
+        async def cancel_import() -> None:
+            await api_client.cancel_import(
+                result.import_id,
+                discord_user_id=interaction.user.id,
+            )
+
+        if result.status == "failed":
+            if not result.ai_enabled:
+                await interaction.followup.send(
+                    embed=embed,
+                    ephemeral=PREVIEW_EPHEMERAL,
+                )
+                return
+
+            failed_view = ImportFailedView(
+                api_client=api_client,
+                retry_action=parse_with_ai,
+                confirm_action=confirm_import,
+                cancel_action=cancel_import,
+                owner_id=interaction.user.id,
+            )
+            message = await interaction.followup.send(
+                embed=embed,
+                view=failed_view,
+                ephemeral=PREVIEW_EPHEMERAL,
+                wait=True,
+            )
+            failed_view.message = message
+            return
+
         view = RecipeImportView(
             api_client=api_client,
             import_action=save_website,
             owner_id=interaction.user.id,
+            ai_reparse_action=parse_with_ai if result.ai_enabled else None,
+            confirm_action=confirm_import,
+            cancel_action=cancel_import if result.ai_enabled else None,
         )
 
         message = await interaction.followup.send(
@@ -452,6 +508,7 @@ def create_bot() -> commands.Bot:
         validation = validate_recipe_attachment(
             filename=bestand.filename,
             size_bytes=bestand.size,
+            content_type=bestand.content_type,
         )
 
         if not validation.valid:
@@ -510,10 +567,65 @@ def create_bot() -> commands.Bot:
                 force=force,
             )
 
+        async def confirm_upload(force: bool) -> RecipeImportResponse:
+            return await api_client.confirm_import(
+                result.import_id,
+                force=force,
+                discord_user_id=interaction.user.id,
+            )
+
+        async def parse_upload_with_ai() -> RecipeImportResponse:
+            return await api_client.parse_import_with_ai(
+                result.import_id,
+                reason=(
+                    "normal_parse_failed"
+                    if result.status == "failed"
+                    else "user_requested_reparse"
+                ),
+                discord_user_id=interaction.user.id,
+            )
+
+        async def cancel_upload() -> None:
+            await api_client.cancel_import(
+                result.import_id,
+                discord_user_id=interaction.user.id,
+            )
+
+        if result.status == "failed":
+            if not result.ai_enabled:
+                await interaction.followup.send(
+                    embed=embed,
+                    ephemeral=PREVIEW_EPHEMERAL,
+                )
+                return
+
+            failed_view = ImportFailedView(
+                api_client=api_client,
+                retry_action=parse_upload_with_ai,
+                confirm_action=confirm_upload,
+                cancel_action=cancel_upload,
+                owner_id=interaction.user.id,
+            )
+            message = await interaction.followup.send(
+                embed=embed,
+                view=failed_view,
+                ephemeral=PREVIEW_EPHEMERAL,
+                wait=True,
+            )
+            failed_view.message = message
+            return
+
+        ai_generated = (
+            result.metadata is not None and result.metadata.parse_method != "normal"
+        )
         view = RecipeImportView(
             api_client=api_client,
-            import_action=save_upload,
+            import_action=confirm_upload if ai_generated else save_upload,
             owner_id=interaction.user.id,
+            ai_reparse_action=(parse_upload_with_ai if result.ai_enabled else None),
+            confirm_action=confirm_upload,
+            cancel_action=cancel_upload if result.ai_enabled else None,
+            ai_generated=ai_generated,
         )
 
         message = await interaction.followup.send(

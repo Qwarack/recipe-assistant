@@ -309,7 +309,10 @@ class AIImportOrchestrator:
             source_name=session.source.original_filename,
         )
 
-        if reason is AIParseReason.IMAGE_INPUT:
+        if (
+            reason is AIParseReason.IMAGE_INPUT
+            or session.source.source_type is SourceType.IMAGE
+        ):
             return await self.importer.import_image(
                 self.source_loader.load_image(session.source),
                 context=context,

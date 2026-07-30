@@ -18,12 +18,25 @@ class RecipePreview:
 
 
 @dataclass(slots=True)
+class RecipeImportMetadata:
+    parse_method: str
+    parser_name: str | None
+    ai_model: str | None
+    extracted_fields: list[str]
+    estimated_fields: list[str]
+    missing_fields: list[str]
+    warnings: list[str]
+
+
+@dataclass(slots=True)
 class RecipeImportResponse:
     import_id: str
     status: str
     destination: str | None
     recipe: RecipePreview | None
     warnings: list[dict[str, Any]]
+    metadata: RecipeImportMetadata | None = None
+    ai_enabled: bool = False
 
 
 @dataclass(slots=True)
@@ -108,13 +121,60 @@ def _parse_import_response(
             source_url=recipe_payload.get("source_url"),
         )
 
+    metadata_payload = payload.get("metadata")
+    metadata = None
+
+    if isinstance(metadata_payload, dict):
+        metadata = RecipeImportMetadata(
+            parse_method=metadata_payload.get("parse_method", "normal"),
+            parser_name=metadata_payload.get("parser_name"),
+            ai_model=metadata_payload.get("ai_model"),
+            extracted_fields=metadata_payload.get("extracted_fields", []),
+            estimated_fields=metadata_payload.get("estimated_fields", []),
+            missing_fields=metadata_payload.get("missing_fields", []),
+            warnings=metadata_payload.get("warnings", []),
+        )
+
     return RecipeImportResponse(
         import_id=payload["import_id"],
         status=payload["status"],
         destination=payload.get("destination"),
         recipe=recipe,
         warnings=payload.get("warnings", []),
+        metadata=metadata,
+        ai_enabled=payload.get("ai_enabled", False),
     )
+
+
+def _parse_preview_response(response: httpx.Response) -> RecipeImportResponse:
+    if response.is_success:
+        return _parse_import_response(response.json())
+
+    try:
+        detail = response.json().get("detail")
+    except ValueError:
+        detail = None
+
+    if isinstance(detail, dict) and detail.get("import_id"):
+        warnings = detail.get("warnings", [])
+        message = detail.get("message")
+        if message and not warnings:
+            warnings = [{"code": "import_failed", "message": message}]
+
+        return _parse_import_response(
+            {
+                "import_id": detail["import_id"],
+                "status": "failed",
+                "destination": None,
+                "recipe": None,
+                "warnings": warnings,
+                "metadata": detail.get("metadata"),
+                "ai_enabled": True,
+            }
+        )
+
+    response.raise_for_status()
+    raise AssertionError("Unreachable response state")
 
 
 @dataclass(slots=True)
@@ -178,9 +238,7 @@ class RecipeApiClient:
                 },
             )
 
-        response.raise_for_status()
-
-        return _parse_import_response(response.json())
+        return _parse_preview_response(response)
 
     async def preview_manual_recipe(
         self,
@@ -199,9 +257,7 @@ class RecipeApiClient:
                 },
             )
 
-        response.raise_for_status()
-
-        return _parse_import_response(response.json())
+        return _parse_preview_response(response)
 
     async def import_manual_recipe(
         self,
@@ -328,9 +384,7 @@ class RecipeApiClient:
                 files=files,
             )
 
-        response.raise_for_status()
-
-        return _parse_import_response(response.json())
+        return _parse_preview_response(response)
 
     async def import_uploaded_recipe(
         self,
@@ -365,6 +419,73 @@ class RecipeApiClient:
         response.raise_for_status()
 
         return _parse_import_response(response.json())
+
+    async def parse_import_with_ai(
+        self,
+        import_id: str,
+        *,
+        reason: str,
+        discord_user_id: int,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/{import_id}/parse-ai"
+
+        async with httpx.AsyncClient(
+            timeout=max(self.timeout_seconds, 130.0),
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={
+                    "reason": reason,
+                    "discord_user_id": discord_user_id,
+                },
+            )
+
+        response.raise_for_status()
+        return _parse_import_response(response.json())
+
+    async def confirm_import(
+        self,
+        import_id: str,
+        *,
+        force: bool,
+        discord_user_id: int,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/{import_id}/confirm"
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                params={
+                    "force": str(force).lower(),
+                    "discord_user_id": discord_user_id,
+                },
+            )
+
+        response.raise_for_status()
+        return _parse_import_response(response.json())
+
+    async def cancel_import(
+        self,
+        import_id: str,
+        *,
+        discord_user_id: int,
+    ) -> None:
+        endpoint = f"{self.base_url}/imports/{import_id}/cancel"
+
+        async with httpx.AsyncClient(
+            timeout=self.timeout_seconds,
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                params={"discord_user_id": discord_user_id},
+            )
+
+        response.raise_for_status()
 
     async def get_meal_plan(
         self,

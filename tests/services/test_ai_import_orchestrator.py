@@ -14,6 +14,7 @@ from app.models.import_session import (
 from app.models.recipe import Ingredient, Recipe, SourceType
 from app.services.ai_import_orchestrator import AIImportOrchestrator
 from app.services.import_session_repository import ImportSessionRepository
+from app.services.recipe_enrichment_service import EnrichmentResult
 
 
 def _recipe(title: str = "Normal soup") -> Recipe:
@@ -141,3 +142,84 @@ def test_failed_normal_parse_can_be_retried_with_same_source() -> None:
 
     assert session.active_result.recipe.title == "Recovered soup"
     assert session.previous_results[-1].status is ImportStatus.FAILED
+
+
+def test_normal_parse_stays_usable_when_enrichment_fails() -> None:
+    repository = ImportSessionRepository()
+    importer = AsyncMock()
+    enrichment = AsyncMock()
+    enrichment.enrich.side_effect = AIUnavailableError("offline")
+    loader = AsyncMock()
+    loader.load_text.return_value = "Original source"
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=importer,
+        enrichment_service=enrichment,
+        source_loader=loader,
+        ai_model="gemma3:4b",
+        enrich_missing_fields=True,
+    )
+    incomplete = _recipe().model_copy(
+        update={
+            "servings": None,
+            "tags": [],
+        }
+    )
+    normal_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=incomplete,
+    )
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+
+    session = asyncio.run(orchestrator.enrich_normal_result(normal_result.import_id))
+
+    assert session.active_result.recipe.title == "Normal soup"
+    assert session.active_result.status is ImportStatus.PARTIAL
+    assert session.active_result.warnings[-1].code == "ai_enrichment_failed"
+
+
+def test_normal_enrichment_only_publishes_successful_merge() -> None:
+    repository = ImportSessionRepository()
+    importer = AsyncMock()
+    enrichment = AsyncMock()
+    incomplete = _recipe().model_copy(update={"servings": None})
+    enriched = incomplete.model_copy(update={"servings": 6})
+    enrichment.enrich.return_value = EnrichmentResult(
+        recipe=enriched,
+        extracted_fields=[],
+        estimated_fields=["servings"],
+        warnings=[],
+    )
+    loader = AsyncMock()
+    loader.load_text.return_value = "Original source"
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=importer,
+        enrichment_service=enrichment,
+        source_loader=loader,
+        ai_model="gemma3:4b",
+        enrich_missing_fields=True,
+    )
+    normal_result = ImportResult(
+        status=ImportStatus.SUCCESS,
+        recipe=incomplete,
+    )
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+
+    session = asyncio.run(orchestrator.enrich_normal_result(normal_result.import_id))
+
+    assert session.active_result.recipe.servings == 6
+    assert session.previous_results[-1].recipe.servings is None
+    assert session.metadata.estimated_fields == ["servings"]

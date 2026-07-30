@@ -1,5 +1,6 @@
 from app.bot.attachments import (
     MAX_ATTACHMENT_SIZE_BYTES,
+    MAX_IMAGE_ATTACHMENT_SIZE_BYTES,
     validate_recipe_attachment,
 )
 
@@ -42,3 +43,24 @@ def test_rejects_empty_attachment() -> None:
 
     assert result.valid is False
     assert result.error == "Het bestand is leeg."
+
+
+def test_accepts_supported_image_attachment() -> None:
+    result = validate_recipe_attachment(
+        filename="recipe.webp",
+        size_bytes=1024,
+        content_type="image/webp",
+    )
+
+    assert result.valid is True
+
+
+def test_rejects_oversized_image_attachment() -> None:
+    result = validate_recipe_attachment(
+        filename="recipe.jpg",
+        size_bytes=MAX_IMAGE_ATTACHMENT_SIZE_BYTES + 1,
+        content_type="image/jpeg",
+    )
+
+    assert result.valid is False
+    assert result.error == "De afbeelding mag maximaal 10 MB groot zijn."

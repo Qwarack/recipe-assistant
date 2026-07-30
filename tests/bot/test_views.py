@@ -6,6 +6,7 @@ from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.views import (
     DetectedUrlView,
     DuplicateRecipeView,
+    ImportFailedView,
     RecipeDeleteView,
     RecipeImportView,
 )
@@ -44,6 +45,40 @@ def test_disable_all_buttons() -> None:
         for child in view.children
         if isinstance(child, discord.ui.Button)
     )
+
+
+def test_recipe_import_view_shows_ai_reparse_when_configured() -> None:
+    view = RecipeImportView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        import_action=unexpected_import,
+        ai_reparse_action=AsyncMock(),
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert [button.label for button in buttons] == [
+        "Opslaan",
+        "Parse met AI",
+        "Annuleren",
+    ]
+
+
+def test_failed_import_view_contains_retry_and_cancel() -> None:
+    view = ImportFailedView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        retry_action=AsyncMock(),
+        confirm_action=AsyncMock(),
+        cancel_action=AsyncMock(),
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert [button.label for button in buttons] == [
+        "Opnieuw met AI",
+        "Annuleren",
+    ]
 
 
 def test_save_button_edits_ephemeral_interaction_response() -> None:

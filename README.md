@@ -190,6 +190,45 @@ Rollback: zet `AI_ENABLED=false` en start `api` en `bot` opnieuw. Omdat deze
 stap geen databasekolommen toevoegt, is geen databasemigratie of downgrade
 nodig.
 
+Nieuwe Discord-interacties:
+
+- Na een normale preview staat `Parse met AI`; het normale resultaat blijft
+  beschikbaar totdat Gemma met succes een nieuwe preview heeft gemaakt.
+- Na een mislukte normale parse staan `Opnieuw met AI` en `Annuleren`.
+- `/recept upload` accepteert naast tekstbestanden één JPEG-, PNG- of
+  WebP-afbeelding van maximaal 10 MB. Afbeeldingen worden naar maximaal 2048
+  pixels verkleind, met EXIF-rotatie gecorrigeerd en daarna door Gemma
+  verwerkt.
+- Een AI-preview toont het gebruikte model, geschatte velden, nog ontbrekende
+  velden en waarschuwingen. `Opslaan` blijft altijd een expliciete stap.
+
+De bot gebruikt hiervoor:
+
+```text
+POST /imports/{import_id}/parse-ai
+POST /imports/{import_id}/confirm
+POST /imports/{import_id}/cancel
+GET  /imports/{import_id}
+POST /imports/upload/preview
+```
+
+Handmatige controle:
+
+1. Start Compose en pull `gemma3:4b`.
+2. Importeer een geldige recepten-URL en controleer de normale preview.
+3. Kies `Parse met AI`, controleer de herkomstregel en bevestig de nieuwe
+   preview.
+4. Upload een screenshot via `/recept upload` en controleer dat opslaan pas
+   na bevestiging plaatsvindt.
+5. Stop `ollama`, start nogmaals een AI-actie en controleer de begrijpelijke
+   foutmelding; een normale preview moet intact blijven.
+6. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
+   onder `IMPORTS_PATH/pending-images` verdwijnt.
+
+Bekende beperking: importsessies zijn proceslokaal. Een API-herstart maakt
+nog niet bevestigde previews ongeldig. Definitieve recepten en het
+Ollama-modelvolume blijven wel bewaard.
+
 ## Weekplanning (fase 3)
 
 Alle datums gebruiken het formaat `JJJJ-MM-DD`. Een planning omvat zeven dagen. Wanneer `/week plan` geen startdatum krijgt, berekent de bot de meest recente woensdag vanaf de gekozen eetdatum; zo loopt de standaardperiode van woensdag t/m dinsdag. Een expliciete startdatum blijft mogelijk.
