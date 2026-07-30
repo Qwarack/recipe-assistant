@@ -2,7 +2,7 @@
 
 Self-hosted receptenimporter voor een homelabomgeving. De applicatie zet recepten uit verschillende bronnen om naar een gevalideerd `Recipe`-model en slaat ze op als consistente Markdown-bestanden met YAML-frontmatter.
 
-De huidige versie omvat **fase 1 t/m 4** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Naast import en handmatige planning ondersteunt de applicatie reproduceerbare automatische weekvoorstellen.
+De huidige versie omvat **fase 1 t/m 4 plus de lokale Gemma-importlaag** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Naast import en handmatige planning ondersteunt de applicatie reproduceerbare automatische weekvoorstellen.
 
 ## Huidige functionaliteit
 
@@ -14,6 +14,9 @@ De applicatie ondersteunt momenteel:
 - Importeren uit een lokaal HTML-bestand.
 - Importeren uit een bestaand Markdown-recept.
 - Importeren uit handmatig geplakte recepttekst.
+- Importeren uit een JPEG-, PNG- of WebP-afbeelding met Gemma vision.
+- Handmatige AI-fallback en AI-herparse vanuit een Discord-preview.
+- Voorzichtige AI-verrijking van ontbrekende receptmetadata.
 - Normalisatie van ingrediënten, hoeveelheden, eenheden, servings, tijden, tags en maaltijdtypes.
 - Opslag als Markdown met YAML-frontmatter.
 - Unieke recept-ID en import-ID.
@@ -21,44 +24,60 @@ De applicatie ondersteunt momenteel:
 - Duplicaatcontrole op bron-URL, inhoud en genormaliseerde titel.
 - Geforceerd opnieuw importeren met `force=true`.
 - Optionele opslag van ruwe HTML bij mislukte imports.
-- FastAPI-endpoint voor website-imports.
+- FastAPI-endpoints voor previews, bevestigde imports, AI-herparse en bestandsuploads.
 - Unit-, snapshot-, fixture- en integratietests.
 - Handmatige weekplanning via de API en Discord, standaard van woensdag t/m dinsdag.
 
 ## Architectuur
 
 ```text
-HTTP request / lokale input
-        |
-        v
-Importer
-        |
-        v
-Pydantic Recipe-model
-        |
-        v
-RecipeImportService
-        |
-        +--> DuplicateDetector
-        |
-        +--> MarkdownRenderer
-        |
-        v
-RecipeStorage
-        |
-        v
-Markdown-bestand
+Discord / HTTP / lokaal bestand
+              |
+              v
+        Importsessie + bron
+              |
+       +------+------+
+       |             |
+       v             v
+Normale parser   Gemma vision
+       |             |
+       +------+------+
+              |
+              v
+     Pydantic Recipe-model
+              |
+              v
+ Ontbrekende velden detecteren
+              |
+              v
+   Optionele AI-verrijking
+              |
+              v
+       Preview + bevestiging
+              |
+              v
+     RecipeImportService
+              |
+       +------+------+
+       |             |
+       v             v
+DuplicateDetector MarkdownRenderer
+                     |
+                     v
+              Markdown-bestand
 ```
 
 Belangrijke onderdelen:
 
 ```text
 app/
+├── ai/                  Ollama-client, prompts en AI-schema's
 ├── api/                 FastAPI-routes en API-schema's
+├── bot/                 Discord-commando's, embeds en views
 ├── core/                Configuratie, logging en HTTP-client
-├── importers/           Website-, HTML-, Markdown- en tekstimporters
+├── importers/           Normale importers en de AI-receptmapper
 ├── models/              Pydantic-modellen
-├── services/            Importflow, parsing, rendering en opslag
+├── services/            Importflow, AI-orchestratie, rendering en opslag
 ├── templates/           Jinja2 Markdown-template
 ├── utils/               Normalisatie en content-hashing
 └── main.py              FastAPI-applicatie
@@ -134,6 +153,95 @@ IMPORTS_PATH=./data/imports
 
 `APP_TIMEZONE` bepaalt welke lokale kalenderdatum voor de actuele planning wordt gebruikt. De standaard is `Europe/Amsterdam`.
 
+## Discord-bot configureren en gebruiken
+
+Vul minimaal de bot-token in `.env` in. Voor snelle commandosynchronisatie
+tijdens ontwikkeling is een guild-ID sterk aanbevolen:
+
+```env
+DISCORD_BOT_TOKEN=je-bot-token
+DISCORD_GUILD_ID=123456789012345678
+DISCORD_ALLOWED_CHANNEL_ID=123456789012345678
+DISCORD_ALLOWED_ROLE_IDS=123456789012345678,987654321098765432
+```
+
+- `DISCORD_GUILD_ID` synchroniseert slash-commando's direct naar die server.
+  Zonder deze waarde worden de commando's globaal gesynchroniseerd; het kan
+  dan langer duren voordat Discord wijzigingen toont.
+- `DISCORD_ALLOWED_CHANNEL_ID` beperkt de `/recept`-commando's en automatische
+  URL-detectie tot één kanaal. Laat de waarde leeg om ieder kanaal toe te
+  staan.
+- `DISCORD_ALLOWED_ROLE_IDS` is een kommalijst. Recepten importeren,
+  uploaden en verwijderen vereist één van deze rollen. Laat de waarde leeg
+  om de rolcontrole uit te schakelen.
+- Schakel voor automatische URL-detectie de **Message Content Intent** in het
+  Discord Developer Portal in. Slash-commando's zelf gebruiken deze intent
+  niet.
+
+De bot gebruikt slash-commando's. Er zijn momenteel geen gebruikerscommando's
+met het `!`-prefix.
+
+### Receptcommando's
+
+| Discord-commando | Verplichte invoer | Gedrag |
+| --- | --- | --- |
+| `/recept import` | `url` | Maakt een preview van een receptenwebsite. |
+| `/recept tekst` | geen | Opent een modal waarin je titel, ingrediënten en stappen plakt. |
+| `/recept upload` | `bestand` | Accepteert `.md`, `.txt`, `.html`, `.htm`, `.jpg`, `.jpeg`, `.png` en `.webp`. |
+| `/recept zoek` | `query` | Zoekt maximaal tien opgeslagen recepten. |
+| `/recept toon` | `identifier` | Toont een recept; het identifier-veld heeft autocomplete. |
+| `/recept verwijder` | `identifier` | Toont eerst een bevestiging en verwijdert daarna het recept. |
+
+Voorbeelden zoals je ze in Discord invoert:
+
+```text
+/recept import url:https://voorbeeld.nl/recept/pasta
+/recept tekst
+/recept upload bestand:<kies een bestand of screenshot>
+/recept zoek query:pasta
+/recept toon identifier:pasta-carbonara
+/recept verwijder identifier:pasta-carbonara
+```
+
+Een normale importpreview toont **Opslaan**, **Parse met AI** en
+**Annuleren** wanneer AI beschikbaar is. Na een AI-parse verandert de
+AI-knop in **Opnieuw met AI**. Wanneer de normale parser niets bruikbaars
+vindt, toont Discord **Opnieuw met AI** en **Annuleren**. Bij een sterk
+duplicaat verschijnen **Toch opnieuw opslaan** en **Niet opslaan**.
+
+Je kunt ook een URL als gewoon bericht in het toegestane kanaal plaatsen.
+De bot reageert dan met **Preview maken** voor de eerste URL in het bericht.
+
+### Weekcommando's
+
+Alle datums gebruiken `JJJJ-MM-DD`. De volledige actuele set is:
+
+| Discord-commando | Verplicht | Optioneel/default |
+| --- | --- | --- |
+| `/week toon` | geen | `startdatum`; zonder waarde wordt de huidige of nieuwste planning getoond. |
+| `/week plan` | `recept_id`, `datum` | `startdatum`, `porties=2`, `maaltijd=dinner`, `notitie`. |
+| `/week wijzig` | `entry_id` | `datum`, `startdatum`, `porties`, `maaltijd`, `notitie`; geef minstens één echte wijziging op en gebruik `-` om de notitie te wissen. |
+| `/week verwijder` | `entry_id` | `startdatum`; zonder waarde wordt de huidige planning gebruikt. |
+| `/week genereer` | geen | `startdatum`, `porties=2`, `max_werktijd`, `vegetarische_dagen`, `recente_recepten_vermijden=21`. |
+| `/week vervang` | `voorstel_id`, `entry_id` | geen; kiest opnieuw voor één entry uit een gegenereerd voorstel. |
+
+Voorbeelden:
+
+```text
+/week toon
+/week toon startdatum:2026-07-29
+/week plan recept_id:pasta-carbonara datum:2026-07-31 porties:4 maaltijd:Avondeten
+/week wijzig entry_id:42 porties:6 notitie:extra groenten
+/week verwijder entry_id:42
+/week genereer porties:4 max_werktijd:30 vegetarische_dagen:do,zo
+/week vervang voorstel_id:12 entry_id:42
+```
+
+`recept_id` gebruikt autocomplete en `maaltijd` biedt de keuzes
+**Ontbijt**, **Lunch** en **Avondeten**. Een gegenereerd weekvoorstel toont
+de knoppen **Accepteren**, **Opnieuw genereren** en **Annuleren**. Alleen de
+gebruiker die het voorstel maakte kan die knoppen bedienen.
+
 ## Lokale AI met Gemma
 
 Ollama en Gemma vormen een optionele lokale laag boven op de bestaande
@@ -141,13 +249,27 @@ parsers. Website-, tekst-, HTML- en Markdown-parsers blijven altijd de
 standaardroute. Gemma wordt alleen gebruikt voor een handmatige fallback of
 herparse, voor afbeeldingsinput en voor het voorzichtig aanvullen van
 ontbrekende metadata. Een AI-resultaat wordt met Pydantic gevalideerd en pas
-na een Discord-preview en expliciete bevestiging opgeslagen.
+na een Discord-preview en expliciete bevestiging opgeslagen. Voor
+afbeeldingsimport is een vision-capabel model nodig; `gemma3:4b` is daarom
+de standaard.
 
-Start de Compose-stack en download het model eenmalig:
+### Gemma voor het eerst toevoegen
+
+Kopieer eerst `.env.example` naar `.env` en controleer deze waarden:
+
+```env
+AI_ENABLED=true
+OLLAMA_MODEL=gemma3:4b
+```
+
+Start vervolgens Ollama, download het model en controleer de installatie:
 
 ```bash
-docker compose up -d
+docker compose up -d ollama
 docker compose exec ollama ollama pull gemma3:4b
+docker compose exec ollama ollama list
+docker compose exec ollama ollama show gemma3:4b
+docker compose up -d --build api bot
 ```
 
 Het model staat in het persistente volume `ollama_data`; het pull-commando
@@ -155,7 +277,79 @@ hoeft dus niet bij iedere start opnieuw te worden uitgevoerd. Poort 11434
 wordt niet naar de host gepubliceerd. De API bereikt Ollama alleen via
 `http://ollama:11434` op het interne Compose-netwerk.
 
-Belangrijkste instellingen:
+Het model wordt bewust niet automatisch bij containerstart gedownload.
+Modelbestanden zijn groot en een tijdelijk internetprobleem mag het starten
+van normale receptenimports niet blokkeren.
+
+### Een ander Gemma-model toevoegen of kiezen
+
+Gebruik exact dezelfde Ollama-modeltag in het pull-commando en in `.env`.
+Vervang `<modeltag>` hieronder bijvoorbeeld door een andere Gemma-tag:
+
+```bash
+docker compose exec ollama ollama pull <modeltag>
+docker compose exec ollama ollama show <modeltag>
+```
+
+Pas daarna `.env` aan:
+
+```env
+OLLAMA_MODEL=<modeltag>
+```
+
+Maak de API en bot opnieuw aan zodat de nieuwe configuratie wordt ingelezen:
+
+```bash
+docker compose up -d --force-recreate api bot
+```
+
+Voor screenshots en foto's moet de gekozen tag afbeeldingen ondersteunen.
+Voor alleen tekstuele fallback kan een tekstmodel technisch werken, maar de
+app verwacht nog steeds betrouwbare, schema-conforme JSON. De applicatie
+selecteert niet automatisch tussen meerdere modellen.
+
+Een bestaande tag opnieuw downloaden of bijwerken:
+
+```bash
+docker compose exec ollama ollama pull <modeltag>
+```
+
+Een niet meer gebruikt model verwijderen:
+
+```bash
+docker compose exec ollama ollama rm <modeltag>
+```
+
+Dit verwijdert alleen het model uit `ollama_data`; recepten en imports onder
+`data/` blijven behouden.
+
+### Ollama buiten Docker gebruiken
+
+Wanneer API en Ollama beide rechtstreeks op de ontwikkelmachine draaien,
+gebruik je niet de Compose-servicenaam:
+
+```env
+OLLAMA_BASE_URL=http://127.0.0.1:11434
+OLLAMA_MODEL=gemma3:4b
+```
+
+Installeer en start Ollama volgens de instructies voor je besturingssysteem.
+Download daarna het model:
+
+```bash
+ollama pull gemma3:4b
+ollama list
+```
+
+Start `ollama serve` alleen wanneer de Ollama-app of systeemservice de server
+niet al heeft gestart.
+
+Gebruik binnen Compose altijd `http://ollama:11434`; `localhost` zou daar
+naar de API-container zelf wijzen.
+
+### AI-instellingen
+
+De belangrijkste instellingen zijn:
 
 ```env
 AI_ENABLED=true
@@ -183,6 +377,13 @@ Probleemoplossing:
 - `docker compose logs ollama` toont model- en runtimefouten.
 - `docker compose exec ollama ollama list` controleert of `gemma3:4b`
   beschikbaar is.
+- `docker compose exec ollama ollama ps` toont welk model momenteel geladen
+  is.
+- Controleer dat `OLLAMA_MODEL` in `.env` exact overeenkomt met een tag uit
+  `ollama list`.
+- Maak `api` en `bot` na een wijziging in `.env` opnieuw aan met
+  `docker compose up -d --force-recreate api bot`; een gewone restart leest
+  gewijzigde environmentvariabelen niet opnieuw in.
 - Zet `AI_ENABLED=false` om alle AI-knoppen en AI-endpoints tijdelijk uit te
   schakelen zonder normale imports te blokkeren.
 
@@ -233,12 +434,17 @@ Ollama-modelvolume blijven wel bewaard.
 
 Alle datums gebruiken het formaat `JJJJ-MM-DD`. Een planning omvat zeven dagen. Wanneer `/week plan` geen startdatum krijgt, berekent de bot de meest recente woensdag vanaf de gekozen eetdatum; zo loopt de standaardperiode van woensdag t/m dinsdag. Een expliciete startdatum blijft mogelijk.
 
-Beschikbare Discord-commando's:
+Belangrijkste handmatige Discord-commando's:
 
 - `/week toon [startdatum]`: toont de actuele planning, met fallback naar de nieuwste planning, of een expliciete planning.
 - `/week plan`: plant een recept in; het receptveld heeft autocomplete en het maaltijdtype vaste keuzes.
 - `/week wijzig`: wijzigt datum, maaltijdtype, porties of notitie van een entry. Gebruik `-` als notitie om die te wissen.
 - `/week verwijder`: verwijdert een entry. Het benodigde entry-ID staat in `/week toon`.
+- `/week genereer`: maakt een automatisch weekvoorstel.
+- `/week vervang`: kiest opnieuw voor één entry uit een gegenereerd voorstel.
+
+Zie [Discord-bot configureren en gebruiken](#discord-bot-configureren-en-gebruiken)
+voor alle parameters, defaults en invoervoorbeelden.
 
 Na toevoegen, wijzigen of verwijderen toont Discord direct de bijgewerkte planning.
 
@@ -649,6 +855,8 @@ De testsuite bevat onder andere:
 - Snapshot-test voor de volledige Markdown-output.
 - Integratietest van HTML-fixture tot opgeslagen Markdown-bestand.
 - Test die controleert dat dezelfde URL geen tweede bestand maakt.
+- Tests voor de Ollama-client, schema-validatie, AI-verrijking en afbeeldingsimport.
+- Bot-tests voor de Discord-commando's, autorisatie en interactieve previews.
 
 ## Ontwikkelworkflow
 
@@ -683,17 +891,18 @@ De website-importer leest geen `file://`-URL's. Lokale bestanden worden uitsluit
 
 ## Huidige projectfase
 
-Fase 1 t/m 4 zijn functioneel compleet voor de huidige scope:
+Fase 1 t/m 4 en de lokale Gemma-importlaag zijn functioneel compleet voor de huidige scope:
 
 - Website-import.
 - Fallbackextractie.
 - Normalisatie.
 - Markdown-opslag.
 - Duplicaatdetectie.
-- Lokale HTML-, Markdown- en tekstimport.
+- Lokale HTML-, Markdown-, tekst- en afbeeldingsimport.
+- Handmatige Gemma-fallback, AI-herparse en voorzichtige metadata-verrijking.
 - Debugopslag.
 - Tests en integratiechecks.
-- Discord als primaire invoerinterface.
+- Discord als primaire invoerinterface, inclusief preview- en bevestigingsflow.
 - Handmatige weekplanning met toevoegen, tonen, wijzigen en verwijderen.
 - Automatische, deterministische weekvoorstellen met draft- en activatieworkflow.
 

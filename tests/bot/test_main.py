@@ -30,6 +30,33 @@ def test_create_bot_registers_recipe_group() -> None:
     assert text_command.name == "tekst"
 
 
+def test_recipe_group_exposes_current_slash_commands_and_upload_formats() -> None:
+    bot = create_bot()
+
+    recipe_group = bot.tree.get_command("recept")
+
+    assert {command.name for command in recipe_group.commands} == {
+        "import",
+        "tekst",
+        "upload",
+        "zoek",
+        "toon",
+        "verwijder",
+    }
+
+    upload_command = recipe_group.get_command("upload")
+    attachment_parameter = next(
+        parameter
+        for parameter in upload_command.parameters
+        if parameter.name == "bestand"
+    )
+
+    assert upload_command.description == "Importeer een receptbestand of afbeelding"
+    assert attachment_parameter.description == (
+        "Markdown, tekst, HTML, JPEG, PNG of WebP"
+    )
+
+
 def test_setup_hook_registers_week_commands() -> None:
     bot = create_bot()
 

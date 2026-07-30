@@ -479,10 +479,10 @@ def create_bot() -> commands.Bot:
 
     @recipe_group.command(
         name="upload",
-        description="Importeer een receptbestand",
+        description="Importeer een receptbestand of afbeelding",
     )
     @app_commands.describe(
-        bestand="Markdown-, tekst- of HTML-bestand",
+        bestand="Markdown, tekst, HTML, JPEG, PNG of WebP",
     )
     @app_commands.checks.cooldown(
         2,
