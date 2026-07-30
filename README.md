@@ -87,9 +87,9 @@ app/
 
 - Python 3.12 of nieuwer.
 - `uv` voor dependency management.
-- Docker en Docker Compose 2.30.0 of nieuwer voor containerized gebruik.
-- Voor NVIDIA-GPU-versnelling op Ubuntu: een ondersteunde NVIDIA-driver en
-  de NVIDIA Container Toolkit.
+- Docker en Docker Compose voor containerized gebruik.
+- Voor NVIDIA-GPU-versnelling op Ubuntu: Docker Compose 2.30.0 of nieuwer,
+  een ondersteunde NVIDIA-driver en de NVIDIA Container Toolkit.
 - Git voor versiebeheer.
 
 ## Installatie voor lokale ontwikkeling
@@ -263,15 +263,16 @@ automatisch volledig of gedeeltelijk op de GPU geladen wanneer dat mogelijk
 is. De Recipe Assistant hoeft daarvoor geen CUDA-optie of andere
 applicatiecode in te stellen.
 
-Een container ziet de GPU niet automatisch. De `ollama`-service in
-`compose.yml` bevat daarom:
+Een container ziet de GPU niet automatisch. De basisconfiguratie in
+`compose.yml` vraagt daarom bewust geen GPU aan: zo start Ollama ook op een
+server zonder NVIDIA-hardware of toolkit en gebruikt het automatisch de CPU.
+De resourcegrenzen blijven in beide situaties actief:
 
 ```yaml
 services:
   ollama:
     image: ollama/ollama
     restart: unless-stopped
-    gpus: all
     cpus: 3.0
     cpu_shares: 256
     mem_limit: 7g
@@ -279,6 +280,14 @@ services:
     memswap_limit: 9g
     volumes:
       - ollama_data:/root/.ollama
+```
+
+GPU-toegang staat in de optionele override `compose.gpu.yml`:
+
+```yaml
+services:
+  ollama:
+    gpus: all
 ```
 
 Deze beginconfiguratie begrenst Ollama tot drie CPU-cores en 7 GB werkgeheugen.
@@ -324,21 +333,25 @@ sudo nvidia-ctk runtime configure --runtime=docker
 sudo systemctl restart docker
 ```
 
-Controleer vóór het starten van de stack of Docker de GPU kan benaderen:
+Controleer vóór het starten van de GPU-variant of Docker de GPU kan benaderen:
 
 ```bash
 docker run --rm --gpus all ubuntu nvidia-smi
 ```
 
-Als dit commando mislukt, kan Ollama in de container de GPU evenmin zien.
-Start na een geslaagde controle Ollama, laad het model eenmalig en bekijk
-daarna de verdeling:
+Als dit commando mislukt, start dan de gewone CPU-configuratie en laat de
+GPU-override weg. Start na een geslaagde controle de GPU-variant, laad het
+model eenmalig en bekijk daarna de verdeling:
 
 ```bash
-docker compose up -d ollama
+docker compose -f compose.yml -f compose.gpu.yml up -d ollama
 docker compose exec ollama ollama run gemma3:4b "Geef alleen het woord OK."
 docker compose exec ollama ollama ps
 ```
+
+Gebruik op een NVIDIA-host de twee `-f`-opties bij ieder later `up`-commando
+waarmee `ollama` wordt aangemaakt of bijgewerkt. Een gewoon
+`docker compose up` gebruikt bewust de CPU-veilige basisconfiguratie.
 
 De kolom `PROCESSOR` van `ollama ps` toont bijvoorbeeld `100% GPU`, `100% CPU`
 of een CPU/GPU-verdeling. Zie de officiële documentatie van
@@ -348,10 +361,13 @@ of een CPU/GPU-verdeling. Zie de officiële documentatie van
 en de
 [NVIDIA Container Toolkit-installatie](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
 
-Omdat de meegeleverde Compose-configuratie expliciet een NVIDIA-GPU aanvraagt,
-kan de `ollama`-container niet starten op een host zonder werkende NVIDIA
-Container Toolkit. Verwijder voor bewust CPU-only gebruik de regel `gpus: all`
-uit `compose.yml`; Ollama valt dan terug op de CPU.
+Samengevat:
+
+- Zonder NVIDIA-hardware of toolkit: gebruik gewoon `docker compose up`; Ollama
+  start op CPU.
+- Met werkende NVIDIA-hardware en toolkit: voeg
+  `-f compose.yml -f compose.gpu.yml` toe; Ollama detecteert en gebruikt de GPU
+  automatisch.
 
 ### Gemma voor het eerst toevoegen
 
@@ -739,6 +755,10 @@ Op de achtergrond:
 ```bash
 docker compose up --build -d
 ```
+
+Deze standaardcommando's zijn CPU-veilig en werken zonder NVIDIA-hardware.
+Gebruik voor GPU-versnelling de
+[NVIDIA Compose-override](#nvidia-gpu-gebruiken-met-docker-op-ubuntu).
 
 Logs bekijken:
 
