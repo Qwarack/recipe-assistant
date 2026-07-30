@@ -36,7 +36,7 @@ def test_api_uses_the_shared_obsidian_vault_for_recipes() -> None:
     api = _compose()["services"]["api"]
 
     assert "/srv/obsidian/ReceptenVault:/data/vault" in api["volumes"]
-    assert api["environment"]["RECIPES_PATH"] == "/data/vault"
+    assert api["environment"]["RECIPES_PATH"] == "/data/vault/recepten"
     assert api["environment"]["VAULT_PATH"] == "/data/vault"
 
 
