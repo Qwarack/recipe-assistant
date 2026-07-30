@@ -87,7 +87,9 @@ app/
 
 - Python 3.12 of nieuwer.
 - `uv` voor dependency management.
-- Docker en Docker Compose voor containerized gebruik.
+- Docker en Docker Compose 2.30.0 of nieuwer voor containerized gebruik.
+- Voor NVIDIA-GPU-versnelling op Ubuntu: een ondersteunde NVIDIA-driver en
+  de NVIDIA Container Toolkit.
 - Git voor versiebeheer.
 
 ## Installatie voor lokale ontwikkeling
@@ -253,6 +255,85 @@ na een Discord-preview en expliciete bevestiging opgeslagen. Voor
 afbeeldingsimport is een vision-capabel model nodig; `gemma3:4b` is daarom
 de standaard.
 
+### NVIDIA-GPU gebruiken met Docker op Ubuntu
+
+Ollama detecteert bij het opstarten automatisch welke compatibele GPU's
+zichtbaar zijn en hoeveel VRAM beschikbaar is. Het model wordt vervolgens
+automatisch volledig of gedeeltelijk op de GPU geladen wanneer dat mogelijk
+is. De Recipe Assistant hoeft daarvoor geen CUDA-optie of andere
+applicatiecode in te stellen.
+
+Een container ziet de GPU niet automatisch. De `ollama`-service in
+`compose.yml` bevat daarom:
+
+```yaml
+services:
+  ollama:
+    image: ollama/ollama
+    gpus: all
+    volumes:
+      - ollama_data:/root/.ollama
+```
+
+`gpus: all` vereist Docker Compose 2.30.0 of nieuwer. Op de Ubuntu-host moeten
+een compatibele NVIDIA-driver en de NVIDIA Container Toolkit geïnstalleerd
+zijn. Controleer eerst of de hostdriver werkt:
+
+```bash
+nvidia-smi
+docker compose version
+```
+
+Installeer daarna op Ubuntu de toolkit via de officiële NVIDIA-repository:
+
+```bash
+sudo apt-get update
+sudo apt-get install -y --no-install-recommends ca-certificates curl gnupg2
+
+curl -fsSL https://nvidia.github.io/libnvidia-container/gpgkey \
+  | sudo gpg --dearmor \
+    -o /usr/share/keyrings/nvidia-container-toolkit-keyring.gpg
+
+curl -s -L \
+  https://nvidia.github.io/libnvidia-container/stable/deb/nvidia-container-toolkit.list \
+  | sed 's#deb https://#deb [signed-by=/usr/share/keyrings/nvidia-container-toolkit-keyring.gpg] https://#g' \
+  | sudo tee /etc/apt/sources.list.d/nvidia-container-toolkit.list
+
+sudo apt-get update
+sudo apt-get install -y nvidia-container-toolkit
+sudo nvidia-ctk runtime configure --runtime=docker
+sudo systemctl restart docker
+```
+
+Controleer vóór het starten van de stack of Docker de GPU kan benaderen:
+
+```bash
+docker run --rm --gpus all ubuntu nvidia-smi
+```
+
+Als dit commando mislukt, kan Ollama in de container de GPU evenmin zien.
+Start na een geslaagde controle Ollama, laad het model eenmalig en bekijk
+daarna de verdeling:
+
+```bash
+docker compose up -d ollama
+docker compose exec ollama ollama run gemma3:4b "Geef alleen het woord OK."
+docker compose exec ollama ollama ps
+```
+
+De kolom `PROCESSOR` van `ollama ps` toont bijvoorbeeld `100% GPU`, `100% CPU`
+of een CPU/GPU-verdeling. Zie de officiële documentatie van
+[Ollama voor Docker](https://docs.ollama.com/docker),
+[Ollama-hardwareondersteuning](https://docs.ollama.com/gpu),
+[Docker Compose GPU-support](https://docs.docker.com/reference/compose-file/services/#gpus)
+en de
+[NVIDIA Container Toolkit-installatie](https://docs.nvidia.com/datacenter/cloud-native/container-toolkit/latest/install-guide.html).
+
+Omdat de meegeleverde Compose-configuratie expliciet een NVIDIA-GPU aanvraagt,
+kan de `ollama`-container niet starten op een host zonder werkende NVIDIA
+Container Toolkit. Verwijder voor bewust CPU-only gebruik de regel `gpus: all`
+uit `compose.yml`; Ollama valt dan terug op de CPU.
+
 ### Gemma voor het eerst toevoegen
 
 Kopieer eerst `.env.example` naar `.env` en controleer deze waarden:
@@ -375,10 +456,12 @@ Probleemoplossing:
 
 - `docker compose ps` toont of de Ollama-container gezond is.
 - `docker compose logs ollama` toont model- en runtimefouten.
+- `docker run --rm --gpus all ubuntu nvidia-smi` controleert of Docker toegang
+  heeft tot de NVIDIA-GPU.
 - `docker compose exec ollama ollama list` controleert of `gemma3:4b`
   beschikbaar is.
 - `docker compose exec ollama ollama ps` toont welk model momenteel geladen
-  is.
+  is en of het op CPU, GPU of een combinatie daarvan draait.
 - Controleer dat `OLLAMA_MODEL` in `.env` exact overeenkomt met een tag uit
   `ollama list`.
 - Maak `api` en `bot` na een wijziging in `.env` opnieuw aan met

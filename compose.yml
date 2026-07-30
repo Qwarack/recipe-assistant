@@ -45,6 +45,7 @@ services:
 
   ollama:
     image: ollama/ollama
+    gpus: all
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
