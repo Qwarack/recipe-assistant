@@ -48,6 +48,48 @@ def test_generate_json_sends_base64_images() -> None:
     asyncio.run(_client(handler).generate_json(prompt="Extract", images=[image]))
 
 
+def test_generate_json_limits_concurrent_ollama_requests() -> None:
+    async def scenario() -> tuple[int, int]:
+        active_requests = 0
+        maximum_active_requests = 0
+        request_count = 0
+        first_request_started = asyncio.Event()
+        release_first_request = asyncio.Event()
+
+        async def handler(request: httpx.Request) -> httpx.Response:
+            nonlocal active_requests, maximum_active_requests, request_count
+            request_count += 1
+            active_requests += 1
+            maximum_active_requests = max(
+                maximum_active_requests,
+                active_requests,
+            )
+            try:
+                if request_count == 1:
+                    first_request_started.set()
+                    await release_first_request.wait()
+                return httpx.Response(200, json={"response": "{}"})
+            finally:
+                active_requests -= 1
+
+        first_client = _client(handler)
+        second_client = _client(handler)
+        first_task = asyncio.create_task(first_client.generate_json(prompt="First"))
+        await first_request_started.wait()
+        second_task = asyncio.create_task(second_client.generate_json(prompt="Second"))
+        await asyncio.sleep(0)
+
+        requests_before_release = request_count
+        release_first_request.set()
+        await asyncio.gather(first_task, second_task)
+        return maximum_active_requests, requests_before_release
+
+    maximum_active_requests, requests_before_release = asyncio.run(scenario())
+
+    assert maximum_active_requests == 1
+    assert requests_before_release == 1
+
+
 @pytest.mark.parametrize(
     "response",
     [

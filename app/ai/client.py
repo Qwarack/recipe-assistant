@@ -1,3 +1,4 @@
+import asyncio
 import base64
 import json
 import logging
@@ -14,6 +15,8 @@ from app.ai.exceptions import (
 )
 
 logger = logging.getLogger(__name__)
+
+_ollama_request_semaphore = asyncio.Semaphore(1)
 
 
 class OllamaClient:
@@ -33,6 +36,7 @@ class OllamaClient:
         self.max_retries = max(0, max_retries)
         self.max_prompt_characters = max_prompt_characters
         self.transport = transport
+        self.request_semaphore = _ollama_request_semaphore
 
     async def generate_json(
         self,
@@ -61,7 +65,8 @@ class OllamaClient:
         started_at = monotonic()
 
         try:
-            response = await self._request_with_retry(payload)
+            async with self.request_semaphore:
+                response = await self._request_with_retry(payload)
             result = self._parse_generate_response(response)
         except Exception as exc:
             logger.warning(

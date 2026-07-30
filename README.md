@@ -270,10 +270,29 @@ Een container ziet de GPU niet automatisch. De `ollama`-service in
 services:
   ollama:
     image: ollama/ollama
+    restart: unless-stopped
     gpus: all
+    cpus: 3.0
+    cpu_shares: 256
+    mem_limit: 7g
+    mem_reservation: 4g
+    memswap_limit: 9g
     volumes:
       - ollama_data:/root/.ollama
 ```
+
+Deze beginconfiguratie begrenst Ollama tot drie CPU-cores en 7 GB werkgeheugen.
+De reservering van 4 GB is een zachte ondergrens voor resourceplanning;
+`memswap_limit: 9g` staat naast de 7 GB RAM maximaal 2 GB swap toe.
+`cpu_shares: 256` geeft Ollama bij CPU-concurrentie een lagere relatieve
+prioriteit dan een container met de standaardwaarde 1024.
+
+De applicatie serialiseert daarnaast alle modelgeneraties met een gedeelde
+`asyncio.Semaphore(1)`. Daardoor voert het huidige API-proces maximaal één
+Ollama-generatie tegelijk uit, inclusief eventuele retries. Andere AI-aanvragen
+wachten asynchroon en blokkeren de normale niet-AI-routes niet. Deze begrenzing
+geldt per API-proces; bij meerdere Uvicorn-workers of API-replica's ontstaat
+één semaphore per proces. De meegeleverde Dockerfile start één worker.
 
 `gpus: all` vereist Docker Compose 2.30.0 of nieuwer. Op de Ubuntu-host moeten
 een compatibele NVIDIA-driver en de NVIDIA Container Toolkit geïnstalleerd

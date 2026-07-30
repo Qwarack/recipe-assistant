@@ -46,6 +46,11 @@ services:
   ollama:
     image: ollama/ollama
     gpus: all
+    cpus: 3.0
+    cpu_shares: 256
+    mem_limit: 7g
+    mem_reservation: 4g
+    memswap_limit: 9g
     restart: unless-stopped
     volumes:
       - ollama_data:/root/.ollama
