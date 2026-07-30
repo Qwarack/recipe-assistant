@@ -159,7 +159,7 @@ def create_bot() -> commands.Bot:
 
         view = RecipeImportView(
             api_client=api_client,
-            import_action=save_website,
+            import_action=(confirm_import if result.ai_enabled else save_website),
             owner_id=interaction.user.id,
             ai_reparse_action=parse_with_ai if result.ai_enabled else None,
             confirm_action=confirm_import,
@@ -620,7 +620,7 @@ def create_bot() -> commands.Bot:
         )
         view = RecipeImportView(
             api_client=api_client,
-            import_action=confirm_upload if ai_generated else save_upload,
+            import_action=(confirm_upload if result.ai_enabled else save_upload),
             owner_id=interaction.user.id,
             ai_reparse_action=(parse_upload_with_ai if result.ai_enabled else None),
             confirm_action=confirm_upload,

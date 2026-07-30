@@ -125,7 +125,7 @@ class ManualRecipeModal(
 
         view = RecipeImportView(
             api_client=self.api_client,
-            import_action=save_manual,
+            import_action=(confirm_import if result.ai_enabled else save_manual),
             owner_id=self.owner_id,
             ai_reparse_action=parse_with_ai if result.ai_enabled else None,
             confirm_action=confirm_import,
