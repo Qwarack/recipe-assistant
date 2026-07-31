@@ -28,9 +28,15 @@ def test_generate_json_returns_parsed_model_response() -> None:
         assert payload["model"] == "qwen3.5:4b"
         assert payload["format"] == "json"
         assert payload["stream"] is False
+        assert payload["system"] == "Extract recipes safely"
         return httpx.Response(200, json={"response": '{"title":"Soup"}'})
 
-    result = asyncio.run(_client(handler).generate_json(prompt="Extract"))
+    result = asyncio.run(
+        _client(handler).generate_json(
+            prompt="Extract",
+            instructions="Extract recipes safely",
+        )
+    )
 
     assert result == {"title": "Soup"}
 

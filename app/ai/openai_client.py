@@ -52,13 +52,14 @@ class OpenAIClient:
         self,
         *,
         prompt: str,
+        instructions: str | None = None,
         images: list[bytes] | None = None,
     ) -> dict[str, Any]:
         if not self.api_key:
             raise AIAuthenticationError("OPENAI_API_KEY is not configured")
         if not prompt.strip():
             raise AIInvalidResponseError("The AI prompt cannot be empty")
-        if len(prompt) > self.max_prompt_characters:
+        if len(prompt) + len(instructions or "") > self.max_prompt_characters:
             raise AIInvalidResponseError("The AI prompt exceeds the configured limit")
 
         content: list[dict[str, Any]] = [{"type": "text", "text": prompt}]
@@ -74,9 +75,14 @@ class OpenAIClient:
                 }
             )
 
+        messages: list[dict[str, Any]] = []
+        if instructions:
+            messages.append({"role": "developer", "content": instructions})
+        messages.append({"role": "user", "content": content})
+
         payload = {
             "model": self.model,
-            "messages": [{"role": "user", "content": content}],
+            "messages": messages,
             "response_format": {
                 "type": "json_schema",
                 "json_schema": {

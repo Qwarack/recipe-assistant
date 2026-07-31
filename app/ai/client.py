@@ -45,12 +45,13 @@ class OllamaClient:
         self,
         *,
         prompt: str,
+        instructions: str | None = None,
         images: list[bytes] | None = None,
     ) -> dict[str, Any]:
         if not prompt.strip():
             raise AIInvalidResponseError("The AI prompt cannot be empty")
 
-        if len(prompt) > self.max_prompt_characters:
+        if len(prompt) + len(instructions or "") > self.max_prompt_characters:
             raise AIInvalidResponseError("The AI prompt exceeds the configured limit")
 
         payload: dict[str, Any] = {
@@ -59,6 +60,9 @@ class OllamaClient:
             "stream": False,
             "format": "json",
         }
+
+        if instructions:
+            payload["system"] = instructions
 
         if images:
             payload["images"] = [

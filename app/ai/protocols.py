@@ -10,5 +10,6 @@ class JSONGenerator(Protocol):
         self,
         *,
         prompt: str,
+        instructions: str | None = None,
         images: list[bytes] | None = None,
     ) -> dict[str, Any]: ...

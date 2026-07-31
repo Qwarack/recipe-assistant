@@ -69,8 +69,38 @@ def test_structured_output_client_does_not_duplicate_schema_in_prompt() -> None:
     )
 
     prompt = client.generate_json.await_args.kwargs["prompt"]
-    assert "provided structured-output contract" in prompt
-    assert '"properties"' not in prompt
+    instructions = client.generate_json.await_args.kwargs["instructions"]
+    assert "Soep met water" in prompt
+    assert "provided strict structured-output contract" in instructions
+    assert '"properties"' not in instructions
+
+
+def test_ai_prompt_contains_targeted_normalization_examples() -> None:
+    client = AsyncMock()
+    client.model = "gpt-5-nano"
+    client.provider = "openai"
+    client.uses_structured_outputs = True
+    client.generate_json.return_value = {
+        "title": "Pasta",
+        "ingredients": [{"name": "pasta"}],
+        "instructions": ["Kook de pasta."],
+    }
+    importer = AIRecipeImporter(client=client)
+
+    asyncio.run(
+        importer.import_text(
+            "1. Kook 400 gram pasta.",
+            context=AIRecipeContext(source_type=SourceType.MANUAL),
+        )
+    )
+
+    instructions = client.generate_json.await_args.kwargs["instructions"]
+    prompt = client.generate_json.await_args.kwargs["prompt"]
+    assert "Never include leading step" in instructions
+    assert "numbers, bullets" in instructions
+    assert "`400 gram pasta`" in instructions
+    assert "A beverage is not dinner" in instructions
+    assert "<recipe_source>" in prompt
 
 
 def test_ai_importer_rejects_missing_required_recipe_fields() -> None:

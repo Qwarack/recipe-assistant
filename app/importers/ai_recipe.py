@@ -49,7 +49,10 @@ class AIRecipeImporter:
             max_source_characters=self.max_source_characters,
             include_schema=self.client.uses_structured_outputs is not True,
         )
-        payload = await self.client.generate_json(prompt=prompt)
+        payload = await self.client.generate_json(
+            prompt=prompt.input,
+            instructions=prompt.instructions,
+        )
         return self._validate_and_map(payload, context=context)
 
     async def import_image(
@@ -66,7 +69,8 @@ class AIRecipeImporter:
             include_schema=self.client.uses_structured_outputs is not True,
         )
         payload = await self.client.generate_json(
-            prompt=prompt,
+            prompt=prompt.input,
+            instructions=prompt.instructions,
             images=[image],
         )
         return self._validate_and_map(payload, context=context)

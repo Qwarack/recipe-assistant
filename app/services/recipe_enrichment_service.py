@@ -88,7 +88,10 @@ class RecipeEnrichmentService:
             unsafe_to_guess=report.unsafe_to_guess,
             max_source_characters=self.max_source_characters,
         )
-        payload = await self.client.generate_json(prompt=prompt)
+        payload = await self.client.generate_json(
+            prompt=prompt.input,
+            instructions=prompt.instructions,
+        )
 
         try:
             enrichment = AIRecipeResult.model_validate(payload)

@@ -50,7 +50,11 @@ def test_generate_json_uses_cheap_model_and_strict_schema() -> None:
         assert payload["model"] == "gpt-5-nano"
         assert payload["reasoning_effort"] == "minimal"
         assert payload["max_completion_tokens"] == 8000
-        assert payload["messages"][0]["content"] == [
+        assert payload["messages"][0] == {
+            "role": "developer",
+            "content": "Extract recipes safely",
+        }
+        assert payload["messages"][1]["content"] == [
             {"type": "text", "text": "Extract"}
         ]
         recipe_schema = payload["response_format"]["json_schema"]
@@ -59,9 +63,30 @@ def test_generate_json_uses_cheap_model_and_strict_schema() -> None:
         assert set(recipe_schema["schema"]["required"]) == set(
             recipe_schema["schema"]["properties"]
         )
+        properties = recipe_schema["schema"]["properties"]
+        assert set(properties["meal_types"]["items"]["enum"]) == {
+            "breakfast",
+            "lunch",
+            "dinner",
+            "snack",
+            "dessert",
+            "drink",
+        }
+        difficulty_enum = next(
+            option["enum"]
+            for option in properties["difficulty"]["anyOf"]
+            if "enum" in option
+        )
+        assert difficulty_enum == ["easy", "medium", "hard"]
+        assert "meal_types" in properties["estimated_fields"]["items"]["enum"]
         return _success_response()
 
-    result = asyncio.run(_client(handler).generate_json(prompt="Extract"))
+    result = asyncio.run(
+        _client(handler).generate_json(
+            prompt="Extract",
+            instructions="Extract recipes safely",
+        )
+    )
 
     assert result["title"] == "Soup"
 
