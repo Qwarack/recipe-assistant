@@ -38,6 +38,8 @@ class Settings(BaseSettings):
     ai_confidence_warning_threshold: float = Field(default=0.80, ge=0, le=1)
     ai_confidence_retry_threshold: float = Field(default=0.60, ge=0, le=1)
     ai_confidence_max_local_retries: int = Field(default=1, ge=0, le=5)
+    recipe_index_auto_sync: bool = True
+    recipe_index_sync_interval_seconds: float = Field(default=2.0, ge=0.5, le=3600)
     max_image_upload_bytes: int = 10 * 1024 * 1024
     max_image_dimension: int = 2048
     max_ai_source_characters: int = 50_000

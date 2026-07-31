@@ -5,6 +5,7 @@ from uuid import UUID, uuid4
 
 from pydantic import BaseModel, Field, HttpUrl, field_validator, model_validator
 
+from app.utils.instructions import normalize_instruction_text
 from app.utils.recipe_metadata import (
     normalize_meal_types,
     normalize_tags,
@@ -94,7 +95,11 @@ class Recipe(BaseModel):
     @field_validator("instructions")
     @classmethod
     def normalize_instructions(cls, values: list[str]) -> list[str]:
-        normalized = [value.strip() for value in values if value.strip()]
+        normalized = [
+            instruction
+            for value in values
+            if (instruction := normalize_instruction_text(value))
+        ]
 
         if not normalized:
             raise ValueError("Recipe must contain at least one instruction")

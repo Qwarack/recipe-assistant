@@ -20,10 +20,14 @@ def test_generation_request_normalizes_weekdays_tags_and_identifiers() -> None:
     assert request.excluded_recipe_identifiers == ["pasta"]
 
 
+@pytest.mark.parametrize("meal_type", ["breakfast", "lunch", "snack"])
+def test_generation_request_only_accepts_dinner(meal_type: str) -> None:
+    with pytest.raises(ValidationError):
+        MealPlanGenerationRequest(meal_type=meal_type)
+
+
 def test_generation_request_rejects_invalid_configuration() -> None:
     with pytest.raises(ValidationError):
         MealPlanGenerationRequest(days_to_plan=[7])
     with pytest.raises(ValidationError):
         MealPlanGenerationRequest(servings=0)
-    with pytest.raises(ValidationError):
-        MealPlanGenerationRequest(meal_type="snack")

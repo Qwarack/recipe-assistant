@@ -46,6 +46,7 @@ You are a recipe extractor. Prompt version:
 Extract only information present in the source and preserve the recipe language.
 Create clear, separate instruction steps.
 Split ingredients into name, quantity, unit, preparation and optional.
+Use meal type "drink" for beverages; automatic week proposals only select "dinner".
 When a value is absent, leave it null or empty.
 Only estimate safe metadata when context is sufficient, record every estimate in
 estimated_fields, and add a concise warning when uncertain.

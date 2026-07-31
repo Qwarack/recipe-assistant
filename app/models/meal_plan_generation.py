@@ -12,7 +12,7 @@ class MealPlanGenerationRequest(BaseModel):
 
     start_date: date | None = None
     servings: int = Field(default=2, ge=1, le=50)
-    meal_type: Literal["breakfast", "lunch", "dinner"] = "dinner"
+    meal_type: Literal["dinner"] = "dinner"
     days_to_plan: list[int] | None = None
     max_preparation_time_weekday: int | None = Field(default=None, ge=0)
     max_preparation_time_weekend: int | None = Field(default=None, ge=0)

@@ -17,6 +17,13 @@ MEAL_TYPE_ALIASES = {
     "dessert": "dessert",
     "nagerecht": "dessert",
     "toetje": "dessert",
+    "drink": "drink",
+    "drinks": "drink",
+    "beverage": "drink",
+    "beverages": "drink",
+    "drank": "drink",
+    "dranken": "drink",
+    "drankje": "drink",
 }
 
 

@@ -2,6 +2,7 @@ from pathlib import Path
 
 import yaml
 from app.models.recipe_detail import RecipeDetail
+from app.utils.instructions import normalize_instruction_text
 
 
 class RecipeDetailService:
@@ -88,7 +89,9 @@ class RecipeDetailService:
             number, separator, value = line.partition(".")
 
             if separator and number.strip().isdigit() and value.strip():
-                instructions.append(value.strip())
+                instruction = normalize_instruction_text(value)
+                if instruction:
+                    instructions.append(instruction)
 
         return instructions
 

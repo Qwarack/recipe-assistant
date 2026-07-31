@@ -107,6 +107,25 @@ def test_renderer_handles_recipe_without_import_id() -> None:
     assert "import_id: null" in markdown
 
 
+def test_renderer_does_not_duplicate_ai_instruction_numbers() -> None:
+    recipe = make_recipe().model_copy(
+        update={
+            "instructions": [
+                "1. Cook the pasta.",
+                "Stap 2: Mix everything.",
+            ]
+        }
+    )
+    recipe = Recipe.model_validate(recipe.model_dump())
+
+    markdown = RecipeMarkdownRenderer().render(recipe)
+
+    assert "1. Cook the pasta." in markdown
+    assert "2. Mix everything." in markdown
+    assert "1. 1. Cook the pasta." not in markdown
+    assert "2. Stap 2:" not in markdown
+
+
 def test_renderer_matches_markdown_snapshot() -> None:
     recipe = make_snapshot_recipe()
     renderer = RecipeMarkdownRenderer()

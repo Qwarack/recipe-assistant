@@ -25,11 +25,13 @@ def test_normalizes_meal_type_aliases() -> None:
             "Avondeten",
             "Dinner",
             " lunch ",
+            "Drankje",
         ]
     )
 
     assert result == [
         "dinner",
+        "drink",
         "lunch",
     ]
 

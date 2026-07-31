@@ -1,6 +1,7 @@
+import asyncio
 import logging
 from collections.abc import AsyncIterator
-from contextlib import asynccontextmanager
+from contextlib import asynccontextmanager, suppress
 
 from fastapi import FastAPI
 
@@ -12,6 +13,8 @@ from app.api.search import router as search_router
 from app.api.uploads import router as uploads_router
 from app.core.config import get_settings
 from app.core.logging import configure_logging
+from app.database.engine import create_session_factory
+from app.services.recipe_index_watcher import RecipeIndexWatcher
 
 settings = get_settings()
 configure_logging(settings.log_level)
@@ -28,7 +31,25 @@ async def lifespan(app: FastAPI) -> AsyncIterator[None]:
         settings.environment,
     )
 
-    yield
+    watcher_task: asyncio.Task[None] | None = None
+    if settings.recipe_index_auto_sync:
+        watcher = RecipeIndexWatcher(
+            session_factory=create_session_factory(settings.database_path),
+            recipes_path=settings.recipes_path,
+            interval_seconds=settings.recipe_index_sync_interval_seconds,
+        )
+        watcher_task = asyncio.create_task(
+            watcher.run(),
+            name="recipe-index-watcher",
+        )
+
+    try:
+        yield
+    finally:
+        if watcher_task is not None:
+            watcher_task.cancel()
+            with suppress(asyncio.CancelledError):
+                await watcher_task
 
     logger.info("Shutting down %s", settings.app_name)
 

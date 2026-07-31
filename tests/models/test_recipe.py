@@ -40,6 +40,52 @@ def test_recipe_can_be_created() -> None:
     assert recipe.tags == ["pasta", "quick"]
 
 
+def test_recipe_removes_ai_instruction_numbering() -> None:
+    recipe = Recipe(
+        title="Genummerd recept",
+        source_type=SourceType.MANUAL,
+        ingredients=[Ingredient(name="water")],
+        instructions=[
+            "1. Verwarm de oven.",
+            "2) Meng alles.",
+            "(3) Laat rusten.",
+            "Stap 4: Bak het gerecht.",
+            "Step 5 - Serveer.",
+            "- 6. Eet smakelijk.",
+            "1. 1. Dubbele nummering.",
+        ],
+    )
+
+    assert recipe.instructions == [
+        "Verwarm de oven.",
+        "Meng alles.",
+        "Laat rusten.",
+        "Bak het gerecht.",
+        "Serveer.",
+        "Eet smakelijk.",
+        "Dubbele nummering.",
+    ]
+
+
+def test_recipe_preserves_leading_measurements_in_instructions() -> None:
+    recipe = Recipe(
+        title="Temperatuurrecept",
+        source_type=SourceType.MANUAL,
+        ingredients=[Ingredient(name="water")],
+        instructions=[
+            "180 °C is de juiste oventemperatuur.",
+            "1/2 liter water toevoegen.",
+            "2 minuten laten koken.",
+        ],
+    )
+
+    assert recipe.instructions == [
+        "180 °C is de juiste oventemperatuur.",
+        "1/2 liter water toevoegen.",
+        "2 minuten laten koken.",
+    ]
+
+
 def test_recipe_requires_at_least_one_ingredient() -> None:
     with pytest.raises(ValidationError):
         Recipe(

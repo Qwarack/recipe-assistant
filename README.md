@@ -526,6 +526,8 @@ AI_CONFIDENCE_HIGH_THRESHOLD=0.95
 AI_CONFIDENCE_WARNING_THRESHOLD=0.80
 AI_CONFIDENCE_RETRY_THRESHOLD=0.60
 AI_CONFIDENCE_MAX_LOCAL_RETRIES=1
+RECIPE_INDEX_AUTO_SYNC=true
+RECIPE_INDEX_SYNC_INTERVAL_SECONDS=2
 MAX_IMAGE_UPLOAD_BYTES=10485760
 MAX_IMAGE_DIMENSION=2048
 MAX_AI_SOURCE_CHARACTERS=50000
@@ -541,6 +543,14 @@ De vier `AI_CONFIDENCE_*`-waarden bepalen de confidence-banden en hoeveel
 lokale herhalingen worden aanbevolen voordat ChatGPT als laatste optie
 beschikbaar komt. De grenzen moeten oplopend zijn:
 `retry < warning < high`.
+
+`RECIPE_INDEX_AUTO_SYNC=true` laat de API de gedeelde Obsidian-receptenmap
+bewaken. Nadat een Markdown-bestand gedurende één controle-interval stabiel is,
+worden nieuwe of gewijzigde frontmatterwaarden automatisch naar de
+SQLite-receptindex gesynchroniseerd. Met de standaard van twee seconden is een
+Obsidian-wijziging normaal binnen ongeveer vier seconden zichtbaar. De
+Markdown-frontmatter blijft de bron van waarheid; wijzig de database niet
+rechtstreeks.
 
 Vul voor de laatste cloudfallback uitsluitend in de lokale, niet-gecommitteerde
 `.env` de sleutel in:
@@ -796,6 +806,20 @@ De seed is geen beveiligingswaarde; hij legt alleen de tie-breaking vast zodat h
 ### Receptmetadata voor planning
 
 De SQLite-index synchroniseert `tags`, `meal_types`, `preparation_time_minutes`, `difficulty`, `servings`, `vegetarian`, `vegan` en leftoversmetadata uit YAML-frontmatter. Ontbrekende maaltijdtypes worden `dinner`, ontbrekende moeilijkheid wordt `unknown` en ontbrekende porties worden `2`. Voor vegetarisch en veganistisch blijft `null` bewust “onbekend”; dit is niet hetzelfde als `false` en voldoet niet aan een harde vegetarische-dagfilter.
+
+Automatische weekvoorstellen vullen uitsluitend `dinner`-slots. Een drankje of
+ander recept dat nooit in een voorstel mag komen kan daarom bijvoorbeeld dit
+gebruiken:
+
+```yaml
+meal_types:
+  - drink
+tags:
+  - drank
+```
+
+Laat `meal_types` hiervoor niet leeg: een ontbrekende waarde krijgt bewust de
+standaard `dinner`. Handmatig plannen van ontbijt en lunch blijft wel mogelijk.
 
 `enable_leftovers` en metadata zoals `suitable_for_leftovers`, `leftover_servings` en `leftover_days` zijn voorbereid. Automatisch aanmaken van leftovers-entries staat in fase 4 uit, omdat bestaande recepten nog niet betrouwbaar genoeg aangeven hoeveel porties werkelijk overblijven. Een request met `enable_leftovers=true` wordt daarom expliciet met 422 geweigerd in plaats van stilzwijgend genegeerd.
 

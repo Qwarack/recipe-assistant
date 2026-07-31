@@ -61,6 +61,14 @@ def test_candidate_service_applies_hard_filters(tmp_path: Path) -> None:
                     vegetarian=True,
                 ),
                 RecipeRecord(
+                    identifier="drink",
+                    title="Drankje",
+                    file_path="drink.md",
+                    tags=["quick", "drank"],
+                    meal_types=["drink"],
+                    vegetarian=True,
+                ),
+                RecipeRecord(
                     identifier="spicy",
                     title="Spicy",
                     file_path="spicy.md",
