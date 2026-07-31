@@ -59,7 +59,27 @@ def test_recipe_import_view_shows_ai_reparse_when_configured() -> None:
 
     assert [button.label for button in buttons] == [
         "Opslaan",
-        "Parse met AI",
+        "Hele recept opnieuw met AI",
+        "Annuleren",
+    ]
+
+
+def test_recipe_import_view_only_shows_metadata_action_for_missing_metadata() -> None:
+    view = RecipeImportView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        import_action=unexpected_import,
+        ai_reparse_action=AsyncMock(),
+        ai_enrichment_action=AsyncMock(),
+        enrichable_fields=["tags", "meal_types"],
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert [button.label for button in buttons] == [
+        "Opslaan",
+        "Hele recept opnieuw met AI",
+        "Ontbrekende metadata aanvullen",
         "Annuleren",
     ]
 
@@ -68,6 +88,7 @@ def test_failed_import_view_contains_retry_and_cancel() -> None:
     view = ImportFailedView(
         api_client=RecipeApiClient(base_url="http://example.test"),
         retry_action=AsyncMock(),
+        enrichment_action=AsyncMock(),
         confirm_action=AsyncMock(),
         cancel_action=AsyncMock(),
         owner_id=123,
@@ -76,7 +97,7 @@ def test_failed_import_view_contains_retry_and_cancel() -> None:
     buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
 
     assert [button.label for button in buttons] == [
-        "Opnieuw met AI",
+        "Recept herstellen met AI",
         "Annuleren",
     ]
 

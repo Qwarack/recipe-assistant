@@ -33,6 +33,10 @@ class AIReparseRequest(BaseModel):
     discord_user_id: int | None = None
 
 
+class AIEnrichmentRequest(BaseModel):
+    discord_user_id: int | None = None
+
+
 class WebsiteImportResponse(BaseModel):
     import_id: UUID
     created_at: datetime

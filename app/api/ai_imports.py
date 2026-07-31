@@ -17,7 +17,11 @@ from app.api.ai_dependencies import (
     get_import_session_repository,
 )
 from app.api.imports import build_recipe_preview, create_import_service
-from app.api.schemas.imports import AIReparseRequest, WebsiteImportResponse
+from app.api.schemas.imports import (
+    AIEnrichmentRequest,
+    AIReparseRequest,
+    WebsiteImportResponse,
+)
 from app.core.config import get_settings
 from app.models.import_session import ImportSession
 from app.services.ai_import_orchestrator import (
@@ -96,7 +100,7 @@ async def parse_import_with_ai(
         raise HTTPException(
             status_code=503,
             detail=(
-                "Het geconfigureerde Gemma-model is nog niet geïnstalleerd op Ollama."
+                "Het geconfigureerde Qwen3.5-model is nog niet geïnstalleerd op Ollama."
             ),
         ) from exc
     except AITimeoutError as exc:
@@ -108,7 +112,7 @@ async def parse_import_with_ai(
         raise HTTPException(
             status_code=422,
             detail=(
-                "Gemma gaf geen geldig recept terug. Je kunt opnieuw proberen "
+                "Qwen3.5 gaf geen geldig recept terug. Je kunt opnieuw proberen "
                 "of de invoer handmatig aanpassen."
             ),
         ) from exc
@@ -118,8 +122,80 @@ async def parse_import_with_ai(
         raise HTTPException(
             status_code=503,
             detail=(
-                "Gemma is momenteel niet bereikbaar. Controleer of de "
+                "Qwen3.5 is momenteel niet bereikbaar. Controleer of de "
                 "Ollama-container actief is."
+            ),
+        ) from exc
+
+    return _response_from_session(session)
+
+
+@router.post(
+    "/{import_id}/enrich-ai",
+    response_model=WebsiteImportResponse,
+)
+async def enrich_import_metadata_with_ai(
+    import_id: UUID,
+    request: AIEnrichmentRequest,
+    orchestrator: Annotated[
+        AIImportOrchestrator,
+        Depends(create_ai_import_orchestrator),
+    ],
+) -> WebsiteImportResponse:
+    settings = get_settings()
+    if not settings.ai_enabled:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Lokale AI-verwerking is uitgeschakeld.",
+        )
+    if not settings.ai_enrich_missing_fields:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail="Het aanvullen van ontbrekende metadata met AI is uitgeschakeld.",
+        )
+
+    try:
+        session = await orchestrator.enrich_missing_metadata(
+            import_id,
+            discord_user_id=request.discord_user_id,
+        )
+    except ImportSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ImportPermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (ImportAlreadyProcessingError, ImportSessionClosedError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AIModelNotFoundError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Het geconfigureerde Qwen3.5-model is nog niet geïnstalleerd op Ollama."
+            ),
+        ) from exc
+    except AITimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "Het aanvullen van de metadata duurde te lang. "
+                "Het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except (AIInvalidResponseError, AIValidationError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "Qwen3.5 gaf geen geldige metadata terug. "
+                "Het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except AIImportSourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (AIUnavailableError, AIServiceError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "Qwen3.5 is momenteel niet bereikbaar. Het oorspronkelijke "
+                "recept is niet gewijzigd; controleer de Ollama-container."
             ),
         ) from exc
 

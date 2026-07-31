@@ -16,7 +16,7 @@ from app.ai.exceptions import (
 def _client(handler, *, max_retries: int = 0) -> OllamaClient:
     return OllamaClient(
         base_url="http://ollama:11434",
-        model="gemma3:4b",
+        model="qwen3.5:4b",
         max_retries=max_retries,
         transport=httpx.MockTransport(handler),
     )
@@ -25,7 +25,7 @@ def _client(handler, *, max_retries: int = 0) -> OllamaClient:
 def test_generate_json_returns_parsed_model_response() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         payload = json.loads(request.content)
-        assert payload["model"] == "gemma3:4b"
+        assert payload["model"] == "qwen3.5:4b"
         assert payload["format"] == "json"
         assert payload["stream"] is False
         return httpx.Response(200, json={"response": '{"title":"Soup"}'})
@@ -116,7 +116,7 @@ def test_generate_json_maps_timeout() -> None:
 def test_generate_json_maps_missing_model() -> None:
     response = httpx.Response(
         404,
-        json={"error": "model 'gemma3:4b' not found, try pulling it first"},
+        json={"error": "model 'qwen3.5:4b' not found, try pulling it first"},
     )
 
     with pytest.raises(AIModelNotFoundError):

@@ -53,7 +53,7 @@ def test_parse_ai_endpoint_returns_new_preview_with_metadata() -> None:
     )
     session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
     session.metadata.parse_method = ParseMethod.AI_REPARSE
-    session.metadata.ai_model = "gemma3:4b"
+    session.metadata.ai_model = "qwen3.5:4b"
     repository.update(session)
     orchestrator = AsyncMock()
     orchestrator.parse_with_ai.return_value = session
@@ -76,6 +76,36 @@ def test_parse_ai_endpoint_returns_new_preview_with_metadata() -> None:
     assert response.json()["recipe"]["title"] == "AI soup"
     assert response.json()["metadata"]["parse_method"] == "ai_reparse"
     orchestrator.parse_with_ai.assert_awaited_once()
+
+
+def test_enrich_ai_endpoint_returns_metadata_only_preview() -> None:
+    repository = ImportSessionRepository()
+    session = _registered_session(repository)
+    session.metadata.parse_method = ParseMethod.AI_ENRICHMENT
+    session.metadata.ai_model = "qwen3.5:4b"
+    session.metadata.estimated_fields = ["tags"]
+    repository.update(session)
+    orchestrator = AsyncMock()
+    orchestrator.enrich_missing_metadata.return_value = session
+
+    app.dependency_overrides[create_ai_import_orchestrator] = lambda: orchestrator
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/imports/{session.import_id}/enrich-ai",
+                json={"discord_user_id": 123},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["metadata"]["parse_method"] == "ai_enrichment"
+    assert response.json()["metadata"]["estimated_fields"] == ["tags"]
+    orchestrator.enrich_missing_metadata.assert_awaited_once_with(
+        session.import_id,
+        discord_user_id=123,
+    )
 
 
 def test_confirm_endpoint_saves_active_candidate_only_after_confirmation(

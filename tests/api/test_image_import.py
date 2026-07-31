@@ -56,11 +56,11 @@ def test_image_upload_uses_ai_and_returns_confirmable_preview(
                     ingredients=[Ingredient(name="tomaat")],
                     instructions=["Snijd de tomaat."],
                 ),
-                extractor="ollama:gemma3:4b",
+                extractor="ollama:qwen3.5:4b",
             )
             session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
             session.metadata.parse_method = ParseMethod.AI_IMAGE
-            session.metadata.ai_model = "gemma3:4b"
+            session.metadata.ai_model = "qwen3.5:4b"
             return repository.update(session)
 
     monkeypatch.setattr("app.api.uploads.get_settings", lambda: settings)

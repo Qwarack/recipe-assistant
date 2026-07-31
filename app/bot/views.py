@@ -6,7 +6,7 @@ import httpx
 
 from app.bot.api_client import RecipeApiClient, RecipeImportResponse
 from app.bot.constants import NOTICE_EPHEMERAL, PREVIEW_EPHEMERAL
-from app.bot.embeds import build_recipe_import_embed
+from app.bot.embeds import build_recipe_import_embed, recipe_field_label
 
 logger = logging.getLogger(__name__)
 
@@ -48,6 +48,8 @@ class RecipeImportView(discord.ui.View):
         import_action: ImportAction,
         owner_id: int,
         ai_reparse_action: AIAction | None = None,
+        ai_enrichment_action: AIAction | None = None,
+        enrichable_fields: list[str] | None = None,
         confirm_action: ImportAction | None = None,
         cancel_action: CancelAction | None = None,
         ai_generated: bool = False,
@@ -58,6 +60,8 @@ class RecipeImportView(discord.ui.View):
         self.api_client = api_client
         self.import_action = import_action
         self.ai_reparse_action = ai_reparse_action
+        self.ai_enrichment_action = ai_enrichment_action
+        self.enrichable_fields = enrichable_fields or []
         self.confirm_action = confirm_action or import_action
         self.cancel_action = cancel_action
         self.owner_id = owner_id
@@ -66,7 +70,10 @@ class RecipeImportView(discord.ui.View):
         if ai_reparse_action is None:
             self.remove_item(self.ai_reparse_button)
         elif ai_generated:
-            self.ai_reparse_button.label = "Opnieuw met AI"
+            self.ai_reparse_button.label = "Nogmaals volledig met AI"
+
+        if ai_enrichment_action is None or not self.enrichable_fields:
+            self.remove_item(self.ai_enrichment_button)
 
     async def interaction_check(
         self,
@@ -157,7 +164,7 @@ class RecipeImportView(discord.ui.View):
         self.stop()
 
     @discord.ui.button(
-        label="Parse met AI",
+        label="Hele recept opnieuw met AI",
         style=discord.ButtonStyle.primary,
     )
     async def ai_reparse_button(
@@ -180,7 +187,7 @@ class RecipeImportView(discord.ui.View):
                 _http_error_message(
                     exc,
                     fallback=(
-                        "Gemma kon dit recept niet verwerken. "
+                        "Qwen3.5 kon dit recept niet verwerken. "
                         "Je kunt het opnieuw proberen."
                     ),
                 ),
@@ -202,6 +209,10 @@ class RecipeImportView(discord.ui.View):
             import_action=self.confirm_action,
             owner_id=self.owner_id,
             ai_reparse_action=self.ai_reparse_action,
+            ai_enrichment_action=self.ai_enrichment_action,
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
             confirm_action=self.confirm_action,
             cancel_action=self.cancel_action,
             ai_generated=True,
@@ -212,6 +223,100 @@ class RecipeImportView(discord.ui.View):
             embed=build_recipe_import_embed(result),
             view=replacement,
         )
+        await interaction.followup.send(
+            (
+                "Qwen3.5 heeft een nieuwe volledige preview gemaakt. "
+                "Controleer het hele recept voordat je het opslaat."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
+        )
+        self.stop()
+
+    @discord.ui.button(
+        label="Ontbrekende metadata aanvullen",
+        style=discord.ButtonStyle.secondary,
+    )
+    async def ai_enrichment_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        if self.ai_enrichment_action is None:
+            return
+
+        requested_fields = self.enrichable_fields.copy()
+        await interaction.response.defer(thinking=True)
+        self._disable_all_buttons()
+
+        try:
+            result = await self.ai_enrichment_action()
+        except httpx.HTTPStatusError as exc:
+            self._enable_all_buttons()
+            await interaction.edit_original_response(view=self)
+            await interaction.followup.send(
+                _http_error_message(
+                    exc,
+                    fallback=(
+                        "Qwen3.5 kon de ontbrekende metadata niet aanvullen. "
+                        "Het oorspronkelijke recept is niet gewijzigd."
+                    ),
+                ),
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+        except httpx.HTTPError:
+            self._enable_all_buttons()
+            await interaction.edit_original_response(view=self)
+            logger.exception("AI recipe metadata enrichment request failed")
+            await interaction.followup.send(
+                (
+                    "De recepten-API is momenteel niet bereikbaar. "
+                    "Het oorspronkelijke recept is niet gewijzigd."
+                ),
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+
+        remaining_fields = (
+            result.metadata.enrichable_fields if result.metadata is not None else []
+        )
+        completed_fields = [
+            field_name
+            for field_name in requested_fields
+            if field_name not in remaining_fields
+        ]
+        replacement = RecipeImportView(
+            api_client=self.api_client,
+            import_action=self.confirm_action,
+            owner_id=self.owner_id,
+            ai_reparse_action=self.ai_reparse_action,
+            ai_enrichment_action=self.ai_enrichment_action,
+            enrichable_fields=remaining_fields,
+            confirm_action=self.confirm_action,
+            cancel_action=self.cancel_action,
+            ai_generated=True,
+        )
+        replacement.message = self.message
+
+        await interaction.edit_original_response(
+            embed=build_recipe_import_embed(result),
+            view=replacement,
+        )
+        if completed_fields:
+            completed = ", ".join(
+                recipe_field_label(field_name) for field_name in completed_fields
+            )
+            message = (
+                f"Qwen3.5 heeft alleen deze lege metadata aangevuld: **{completed}**. "
+                "Bestaande receptgegevens zijn behouden. Controleer de schattingen "
+                "voordat je opslaat."
+            )
+        else:
+            message = (
+                "Qwen3.5 kon geen ontbrekende metadata verantwoord aanvullen. "
+                "Het recept is inhoudelijk niet gewijzigd."
+            )
+        await interaction.followup.send(message, ephemeral=NOTICE_EPHEMERAL)
         self.stop()
 
     @discord.ui.button(
@@ -279,6 +384,7 @@ class ImportFailedView(discord.ui.View):
         *,
         api_client: RecipeApiClient,
         retry_action: AIAction,
+        enrichment_action: AIAction,
         confirm_action: ImportAction,
         cancel_action: CancelAction,
         owner_id: int,
@@ -287,6 +393,7 @@ class ImportFailedView(discord.ui.View):
         super().__init__(timeout=timeout)
         self.api_client = api_client
         self.retry_action = retry_action
+        self.enrichment_action = enrichment_action
         self.confirm_action = confirm_action
         self.cancel_action = cancel_action
         self.owner_id = owner_id
@@ -306,7 +413,7 @@ class ImportFailedView(discord.ui.View):
         return False
 
     @discord.ui.button(
-        label="Opnieuw met AI",
+        label="Recept herstellen met AI",
         style=discord.ButtonStyle.primary,
     )
     async def retry_button(
@@ -326,7 +433,7 @@ class ImportFailedView(discord.ui.View):
                 _http_error_message(
                     exc,
                     fallback=(
-                        "Gemma kon dit recept niet verwerken. "
+                        "Qwen3.5 kon dit recept niet verwerken. "
                         "Je kunt het opnieuw proberen."
                     ),
                 ),
@@ -348,6 +455,10 @@ class ImportFailedView(discord.ui.View):
             import_action=self.confirm_action,
             owner_id=self.owner_id,
             ai_reparse_action=self.retry_action,
+            ai_enrichment_action=self.enrichment_action,
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
             confirm_action=self.confirm_action,
             cancel_action=self.cancel_action,
             ai_generated=True,
@@ -356,6 +467,13 @@ class ImportFailedView(discord.ui.View):
         await interaction.edit_original_response(
             embed=build_recipe_import_embed(result),
             view=replacement,
+        )
+        await interaction.followup.send(
+            (
+                "Qwen3.5 heeft een receptpreview gemaakt. Controleer het recept "
+                "en vul ontbrekende metadata desgewenst apart aan."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
         )
         self.stop()
 
@@ -728,6 +846,12 @@ class DetectedUrlView(discord.ui.View):
                 discord_user_id=self.owner_id,
             )
 
+        async def enrich_metadata_with_ai() -> RecipeImportResponse:
+            return await self.api_client.enrich_import_metadata_with_ai(
+                result.import_id,
+                discord_user_id=self.owner_id,
+            )
+
         async def cancel_import() -> None:
             await self.api_client.cancel_import(
                 result.import_id,
@@ -740,6 +864,7 @@ class DetectedUrlView(discord.ui.View):
             import_view: discord.ui.View = ImportFailedView(
                 api_client=self.api_client,
                 retry_action=parse_with_ai,
+                enrichment_action=enrich_metadata_with_ai,
                 confirm_action=confirm_import,
                 cancel_action=cancel_import,
                 owner_id=self.owner_id,
@@ -750,6 +875,14 @@ class DetectedUrlView(discord.ui.View):
                 import_action=(confirm_import if result.ai_enabled else save_website),
                 owner_id=self.owner_id,
                 ai_reparse_action=parse_with_ai if result.ai_enabled else None,
+                ai_enrichment_action=(
+                    enrich_metadata_with_ai if result.ai_enabled else None
+                ),
+                enrichable_fields=(
+                    result.metadata.enrichable_fields
+                    if result.metadata is not None
+                    else []
+                ),
                 confirm_action=confirm_import,
                 cancel_action=cancel_import if result.ai_enabled else None,
             )

@@ -14,6 +14,7 @@ class ParseMethod(StrEnum):
     AI_TEXT = "ai_text"
     AI_IMAGE = "ai_image"
     AI_REPARSE = "ai_reparse"
+    AI_ENRICHMENT = "ai_enrichment"
 
 
 class ValueOrigin(StrEnum):
@@ -28,7 +29,6 @@ class AIParseReason(StrEnum):
     NORMAL_PARSE_FAILED = "normal_parse_failed"
     USER_REQUESTED_REPARSE = "user_requested_reparse"
     IMAGE_INPUT = "image_input"
-    MISSING_FIELDS = "missing_fields"
 
 
 class ImportProcessingStatus(StrEnum):
@@ -81,6 +81,8 @@ class RecipeImportMetadata(BaseModel):
     extracted_fields: list[str] = Field(default_factory=list)
     estimated_fields: list[str] = Field(default_factory=list)
     missing_fields: list[str] = Field(default_factory=list)
+    enrichable_fields: list[str] = Field(default_factory=list)
+    unsafe_to_guess_fields: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
     normal_parser_error: str | None = None
     attempts: list[ParseAttempt] = Field(default_factory=list)

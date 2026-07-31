@@ -93,6 +93,12 @@ class ManualRecipeModal(
                 discord_user_id=self.owner_id,
             )
 
+        async def enrich_metadata_with_ai() -> RecipeImportResponse:
+            return await self.api_client.enrich_import_metadata_with_ai(
+                result.import_id,
+                discord_user_id=self.owner_id,
+            )
+
         async def cancel_import() -> None:
             await self.api_client.cancel_import(
                 result.import_id,
@@ -110,6 +116,7 @@ class ManualRecipeModal(
             failed_view = ImportFailedView(
                 api_client=self.api_client,
                 retry_action=parse_with_ai,
+                enrichment_action=enrich_metadata_with_ai,
                 confirm_action=confirm_import,
                 cancel_action=cancel_import,
                 owner_id=self.owner_id,
@@ -128,6 +135,12 @@ class ManualRecipeModal(
             import_action=(confirm_import if result.ai_enabled else save_manual),
             owner_id=self.owner_id,
             ai_reparse_action=parse_with_ai if result.ai_enabled else None,
+            ai_enrichment_action=(
+                enrich_metadata_with_ai if result.ai_enabled else None
+            ),
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
             confirm_action=confirm_import,
             cancel_action=cancel_import if result.ai_enabled else None,
         )

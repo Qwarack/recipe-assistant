@@ -20,7 +20,7 @@ class Settings(BaseSettings):
     discord_allowed_role_ids: str | None = None
     ai_enabled: bool = True
     ollama_base_url: str = "http://ollama:11434"
-    ollama_model: str = "gemma3:4b"
+    ollama_model: str = "qwen3.5:4b"
     ollama_timeout_seconds: float = 120.0
     ollama_max_retries: int = 1
     ai_enrich_missing_fields: bool = True

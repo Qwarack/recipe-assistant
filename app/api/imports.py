@@ -174,9 +174,9 @@ async def preview_website_recipe(
         Depends(create_preview_service),
     ],
 ) -> WebsiteImportResponse:
-    preview_with_enrichment = getattr(service, "preview_with_enrichment", None)
-    if callable(preview_with_enrichment):
-        result = await preview_with_enrichment(str(request.url))
+    preview_with_ai_session = getattr(service, "preview_with_ai_session", None)
+    if callable(preview_with_ai_session):
+        result = await preview_with_ai_session(str(request.url))
     else:
         result = service.preview(str(request.url))
 
@@ -254,9 +254,9 @@ async def preview_manual_recipe(
         Depends(create_manual_preview_service),
     ],
 ) -> WebsiteImportResponse:
-    preview_with_enrichment = getattr(service, "preview_with_enrichment", None)
-    if callable(preview_with_enrichment):
-        result = await preview_with_enrichment(request.text)
+    preview_with_ai_session = getattr(service, "preview_with_ai_session", None)
+    if callable(preview_with_ai_session):
+        result = await preview_with_ai_session(request.text)
     else:
         result = service.preview(request.text)
 

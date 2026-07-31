@@ -127,92 +127,123 @@ class AIImportOrchestrator:
         )
 
         if result.recipe is not None:
-            report = detect_missing_fields(result.recipe)
-            session.metadata.missing_fields = [
-                *report.required,
-                *report.enrichable,
-                *report.unsafe_to_guess,
-            ]
+            self._update_missing_fields(session)
             self.repository.update(session)
 
         return session
 
-    async def enrich_normal_result(
+    async def enrich_missing_metadata(
         self,
         import_id: UUID,
+        *,
+        discord_user_id: int | None = None,
     ) -> ImportSession:
-        session = self.repository.get(import_id)
-        recipe = session.active_result.recipe
+        started_at = monotonic()
+        self.repository.set_owner(import_id, discord_user_id)
 
-        if (
-            recipe is None
-            or not self.enrich_missing_fields
-            or not detect_missing_fields(recipe).enrichable
-        ):
-            return session
+        async with self.repository.processing(import_id):
+            session = self.repository.get(import_id)
+            recipe = session.active_result.recipe
 
-        try:
-            source_text = await self.source_loader.load_text(session.source)
-            enrichment = await self.enrichment_service.enrich(
-                recipe=recipe,
-                source_context=source_text,
-                report=detect_missing_fields(recipe),
+            if recipe is None:
+                raise AIImportSourceError(
+                    "Deze import bevat geen receptmetadata om aan te vullen."
+                )
+
+            report = detect_missing_fields(recipe)
+            if not self.enrich_missing_fields or not report.enrichable:
+                self._update_missing_fields(session)
+                return self.repository.update(session)
+
+            attempt = ParseAttempt(
+                attempt_number=len(session.metadata.attempts) + 1,
+                method=ParseMethod.AI_ENRICHMENT,
+                model=self.ai_model,
             )
-        except AIServiceError:
-            warning = ImportWarning(
-                code="ai_enrichment_failed",
-                message=(
-                    "Het recept is normaal verwerkt, maar ontbrekende velden "
-                    "konden niet met AI worden aangevuld."
+            session.status = ImportProcessingStatus.PROCESSING_AI
+            session.metadata.attempts.append(attempt)
+            self.repository.update(session)
+
+            try:
+                source_text = (
+                    ""
+                    if session.source.source_type is SourceType.IMAGE
+                    else await self.source_loader.load_text(session.source)
+                )
+                enrichment = await self.enrichment_service.enrich(
+                    recipe=recipe,
+                    source_context=source_text,
+                    report=report,
+                )
+            except AIServiceError as exc:
+                session = self.repository.get(import_id)
+                failed_attempt = session.metadata.attempts[-1]
+                failed_attempt.finished_at = datetime.now(UTC)
+                failed_attempt.error_code = type(exc).__name__
+                failed_attempt.success = False
+                session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
+                self.repository.update(session)
+                self._log_attempt(
+                    session,
+                    method=ParseMethod.AI_ENRICHMENT,
+                    started_at=started_at,
+                    success=False,
+                    error_code=type(exc).__name__,
+                )
+                raise
+
+            session = self.repository.get(import_id)
+            session.previous_results.append(session.active_result)
+            warnings = [
+                *session.active_result.warnings,
+                *(
+                    ImportWarning(code="ai_enrichment_warning", message=message)
+                    for message in enrichment.warnings
                 ),
-            )
+            ]
             session.active_result = session.active_result.model_copy(
                 update={
-                    "status": ImportStatus.PARTIAL,
-                    "warnings": [*session.active_result.warnings, warning],
+                    "recipe": enrichment.recipe,
+                    "status": (
+                        ImportStatus.PARTIAL
+                        if warnings
+                        else session.active_result.status
+                    ),
+                    "warnings": warnings,
                 }
             )
-            session.metadata.warnings = list(
-                dict.fromkeys([*session.metadata.warnings, warning.message])
+            session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
+            session.metadata.parse_method = ParseMethod.AI_ENRICHMENT
+            session.metadata.ai_model = self.ai_model
+            session.metadata.extracted_fields = list(
+                dict.fromkeys(
+                    [
+                        *session.metadata.extracted_fields,
+                        *enrichment.extracted_fields,
+                    ]
+                )
             )
-            return self.repository.update(session)
-
-        session.previous_results.append(session.active_result)
-        warnings = [
-            *session.active_result.warnings,
-            *(
-                ImportWarning(code="ai_enrichment_warning", message=message)
-                for message in enrichment.warnings
-            ),
-        ]
-        session.active_result = session.active_result.model_copy(
-            update={
-                "recipe": enrichment.recipe,
-                "status": ImportStatus.PARTIAL
-                if warnings
-                else session.active_result.status,
-                "warnings": warnings,
-            }
-        )
-        session.metadata.ai_model = self.ai_model
-        session.metadata.extracted_fields = list(
-            dict.fromkeys(
-                [
-                    *session.metadata.extracted_fields,
-                    *enrichment.extracted_fields,
-                ]
+            session.metadata.estimated_fields = list(
+                dict.fromkeys(
+                    [
+                        *session.metadata.estimated_fields,
+                        *enrichment.estimated_fields,
+                    ]
+                )
             )
-        )
-        session.metadata.estimated_fields = list(
-            dict.fromkeys(
-                [
-                    *session.metadata.estimated_fields,
-                    *enrichment.estimated_fields,
-                ]
+            successful_attempt = session.metadata.attempts[-1]
+            successful_attempt.finished_at = datetime.now(UTC)
+            successful_attempt.success = True
+            successful_attempt.warnings = enrichment.warnings
+            self._update_missing_fields(session)
+            updated = self.repository.update(session)
+            self._log_attempt(
+                updated,
+                method=ParseMethod.AI_ENRICHMENT,
+                started_at=started_at,
+                success=True,
             )
-        )
-        self._update_missing_fields(session)
-        return self.repository.update(session)
+            return updated
 
     async def parse_with_ai(
         self,
@@ -238,10 +269,6 @@ class AIImportOrchestrator:
 
             try:
                 imported = await self._parse_source(session, reason=reason)
-                imported = await self._enrich_ai_result_once(
-                    session,
-                    imported=imported,
-                )
             except AIServiceError as exc:
                 session = self.repository.get(import_id)
                 failed_attempt = session.metadata.attempts[-1]
@@ -321,55 +348,6 @@ class AIImportOrchestrator:
         source_text = await self.source_loader.load_text(session.source)
         return await self.importer.import_text(source_text, context=context)
 
-    async def _enrich_ai_result_once(
-        self,
-        session: ImportSession,
-        *,
-        imported: AIRecipeImport,
-    ) -> AIRecipeImport:
-        report = detect_missing_fields(imported.recipe)
-
-        if not self.enrich_missing_fields or not report.enrichable:
-            return imported
-
-        try:
-            source_text = (
-                ""
-                if session.source.source_type is SourceType.IMAGE
-                else await self.source_loader.load_text(session.source)
-            )
-            enrichment = await self.enrichment_service.enrich(
-                recipe=imported.recipe,
-                source_context=source_text,
-                report=report,
-            )
-        except AIServiceError:
-            warning = (
-                "Het AI-recept is verwerkt, maar ontbrekende velden konden "
-                "niet verder worden aangevuld."
-            )
-            return AIRecipeImport(
-                recipe=imported.recipe,
-                extracted_fields=imported.extracted_fields,
-                estimated_fields=imported.estimated_fields,
-                warnings=list(dict.fromkeys([*imported.warnings, warning])),
-            )
-
-        return AIRecipeImport(
-            recipe=enrichment.recipe,
-            extracted_fields=list(
-                dict.fromkeys(
-                    [*imported.extracted_fields, *enrichment.extracted_fields]
-                )
-            ),
-            estimated_fields=list(
-                dict.fromkeys(
-                    [*imported.estimated_fields, *enrichment.estimated_fields]
-                )
-            ),
-            warnings=list(dict.fromkeys([*imported.warnings, *enrichment.warnings])),
-        )
-
     @staticmethod
     def _method_for_reason(reason: AIParseReason) -> ParseMethod:
         if reason is AIParseReason.IMAGE_INPUT:
@@ -378,11 +356,12 @@ class AIImportOrchestrator:
             return ParseMethod.AI_REPARSE
         return ParseMethod.AI_TEXT
 
-    @staticmethod
-    def _update_missing_fields(session: ImportSession) -> None:
+    def _update_missing_fields(self, session: ImportSession) -> None:
         recipe = session.active_result.recipe
         if recipe is None:
             session.metadata.missing_fields = []
+            session.metadata.enrichable_fields = []
+            session.metadata.unsafe_to_guess_fields = []
             return
 
         report = detect_missing_fields(recipe)
@@ -391,6 +370,10 @@ class AIImportOrchestrator:
             *report.enrichable,
             *report.unsafe_to_guess,
         ]
+        session.metadata.enrichable_fields = (
+            report.enrichable if self.enrich_missing_fields else []
+        )
+        session.metadata.unsafe_to_guess_fields = report.unsafe_to_guess
 
     def _log_attempt(
         self,

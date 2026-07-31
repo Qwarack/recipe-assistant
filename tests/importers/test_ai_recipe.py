@@ -9,7 +9,7 @@ from app.models.recipe import SourceType
 
 def test_ai_importer_maps_valid_json_to_recipe() -> None:
     client = AsyncMock()
-    client.model = "gemma3:4b"
+    client.model = "qwen3.5:4b"
     client.generate_json.return_value = {
         "title": "Tomatensoep",
         "servings": 4,
@@ -37,7 +37,7 @@ def test_ai_importer_maps_valid_json_to_recipe() -> None:
     )
 
     assert result.recipe.title == "Tomatensoep"
-    assert result.recipe.extractor == "ollama:gemma3:4b"
+    assert result.recipe.extractor == "ollama:qwen3.5:4b"
     assert result.recipe.vegetarian is True
     assert result.recipe.tags == ["nederlands", "soep", "vegetarian"]
     assert result.estimated_fields == ["servings"]
@@ -46,7 +46,7 @@ def test_ai_importer_maps_valid_json_to_recipe() -> None:
 
 def test_ai_importer_rejects_missing_required_recipe_fields() -> None:
     client = AsyncMock()
-    client.model = "gemma3:4b"
+    client.model = "qwen3.5:4b"
     client.generate_json.return_value = {
         "title": "Geen recept",
         "ingredients": [],
@@ -65,7 +65,7 @@ def test_ai_importer_rejects_missing_required_recipe_fields() -> None:
 
 def test_ai_image_importer_passes_image_to_client() -> None:
     client = AsyncMock()
-    client.model = "gemma3:4b"
+    client.model = "qwen3.5:4b"
     client.generate_json.return_value = {
         "title": "Pasta",
         "ingredients": [{"name": "pasta"}],

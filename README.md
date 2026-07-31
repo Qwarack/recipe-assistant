@@ -2,7 +2,7 @@
 
 Self-hosted receptenimporter voor een homelabomgeving. De applicatie zet recepten uit verschillende bronnen om naar een gevalideerd `Recipe`-model en slaat ze op als consistente Markdown-bestanden met YAML-frontmatter.
 
-De huidige versie omvat **fase 1 t/m 4 plus de lokale Gemma-importlaag** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Naast import en handmatige planning ondersteunt de applicatie reproduceerbare automatische weekvoorstellen.
+De huidige versie omvat **fase 1 t/m 4 plus de lokale Qwen3.5-importlaag** van een groter systeem voor receptenbeheer, weekplanning, boodschappenlijsten en later voorraadbeheer. Naast import en handmatige planning ondersteunt de applicatie reproduceerbare automatische weekvoorstellen.
 
 ## Huidige functionaliteit
 
@@ -14,7 +14,7 @@ De applicatie ondersteunt momenteel:
 - Importeren uit een lokaal HTML-bestand.
 - Importeren uit een bestaand Markdown-recept.
 - Importeren uit handmatig geplakte recepttekst.
-- Importeren uit een JPEG-, PNG- of WebP-afbeelding met Gemma vision.
+- Importeren uit een JPEG-, PNG- of WebP-afbeelding met Qwen3.5 vision.
 - Handmatige AI-fallback en AI-herparse vanuit een Discord-preview.
 - Voorzichtige AI-verrijking van ontbrekende receptmetadata.
 - Normalisatie van ingrediënten, hoeveelheden, eenheden, servings, tijden, tags en maaltijdtypes.
@@ -39,7 +39,7 @@ Discord / HTTP / lokaal bestand
        +------+------+
        |             |
        v             v
-Normale parser   Gemma vision
+Normale parser   Qwen3.5 vision
        |             |
        +------+------+
               |
@@ -207,11 +207,14 @@ Voorbeelden zoals je ze in Discord invoert:
 /recept verwijder identifier:pasta-carbonara
 ```
 
-Een normale importpreview toont **Opslaan**, **Parse met AI** en
-**Annuleren** wanneer AI beschikbaar is. Na een AI-parse verandert de
-AI-knop in **Opnieuw met AI**. Wanneer de normale parser niets bruikbaars
-vindt, toont Discord **Opnieuw met AI** en **Annuleren**. Bij een sterk
-duplicaat verschijnen **Toch opnieuw opslaan** en **Niet opslaan**.
+Een normale importpreview toont **Opslaan**, **Hele recept opnieuw met AI**
+en **Annuleren** wanneer AI beschikbaar is. Als veilige receptmetadata
+ontbreekt, verschijnt daarnaast **Ontbrekende metadata aanvullen**. De preview
+benoemt vooraf welke lege velden Qwen3.5 mag schatten; bestaande gegevens
+worden niet overschreven. Na een volledige AI-parse heet de knop
+**Nogmaals volledig met AI**. Wanneer de normale parser niets bruikbaars
+vindt, toont Discord **Recept herstellen met AI** en **Annuleren**. Bij een
+sterk duplicaat verschijnen **Toch opnieuw opslaan** en **Niet opslaan**.
 
 Je kunt ook een URL als gewoon bericht in het toegestane kanaal plaatsen.
 De bot reageert dan met **Preview maken** voor de eerste URL in het bericht.
@@ -246,16 +249,16 @@ Voorbeelden:
 de knoppen **Accepteren**, **Opnieuw genereren** en **Annuleren**. Alleen de
 gebruiker die het voorstel maakte kan die knoppen bedienen.
 
-## Lokale AI met Gemma
+## Lokale AI met Qwen3.5
 
-Ollama en Gemma vormen een optionele lokale laag boven op de bestaande
+Ollama en Qwen3.5 vormen een optionele lokale laag boven op de bestaande
 parsers. Website-, tekst-, HTML- en Markdown-parsers blijven altijd de
-standaardroute. Gemma wordt alleen gebruikt voor een handmatige fallback of
-herparse, voor afbeeldingsinput en voor het voorzichtig aanvullen van
-ontbrekende metadata. Een AI-resultaat wordt met Pydantic gevalideerd en pas
-na een Discord-preview en expliciete bevestiging opgeslagen. Voor
-afbeeldingsimport is een vision-capabel model nodig; `gemma3:4b` is daarom
-de standaard.
+standaardroute. Qwen3.5 wordt alleen gebruikt voor een handmatige fallback of
+volledige herparse, voor afbeeldingsinput en — na een afzonderlijke
+gebruikerskeuze — voor het voorzichtig aanvullen van ontbrekende metadata.
+Een AI-resultaat wordt met Pydantic gevalideerd en pas na een Discord-preview
+en expliciete bevestiging opgeslagen. `qwen3.5:4b` ondersteunt zowel tekst als
+afbeeldingen en is daarom de standaard.
 
 ### NVIDIA-GPU gebruiken met Docker op Ubuntu
 
@@ -347,7 +350,7 @@ model eenmalig en bekijk daarna de verdeling:
 
 ```bash
 docker compose -f compose.yml -f compose.gpu.yml up -d ollama
-docker compose exec ollama ollama run gemma3:4b "Geef alleen het woord OK."
+docker compose exec ollama ollama run qwen3.5:4b "Geef alleen het woord OK."
 docker compose exec ollama ollama ps
 ```
 
@@ -371,22 +374,22 @@ Samengevat:
   `-f compose.yml -f compose.gpu.yml` toe; Ollama detecteert en gebruikt de GPU
   automatisch.
 
-### Gemma voor het eerst toevoegen
+### Qwen3.5 voor het eerst toevoegen
 
 Kopieer eerst `.env.example` naar `.env` en controleer deze waarden:
 
 ```env
 AI_ENABLED=true
-OLLAMA_MODEL=gemma3:4b
+OLLAMA_MODEL=qwen3.5:4b
 ```
 
 Start vervolgens Ollama, download het model en controleer de installatie:
 
 ```bash
 docker compose up -d ollama
-docker compose exec ollama ollama pull gemma3:4b
+docker compose exec ollama ollama pull qwen3.5:4b
 docker compose exec ollama ollama list
-docker compose exec ollama ollama show gemma3:4b
+docker compose exec ollama ollama show qwen3.5:4b
 docker compose up -d --build api bot
 ```
 
@@ -399,10 +402,10 @@ Het model wordt bewust niet automatisch bij containerstart gedownload.
 Modelbestanden zijn groot en een tijdelijk internetprobleem mag het starten
 van normale receptenimports niet blokkeren.
 
-### Een ander Gemma-model toevoegen of kiezen
+### Een ander Ollama-model toevoegen of kiezen
 
 Gebruik exact dezelfde Ollama-modeltag in het pull-commando en in `.env`.
-Vervang `<modeltag>` hieronder bijvoorbeeld door een andere Gemma-tag:
+Vervang `<modeltag>` hieronder bijvoorbeeld door een andere Qwen3.5-tag:
 
 ```bash
 docker compose exec ollama ollama pull <modeltag>
@@ -448,14 +451,14 @@ gebruik je niet de Compose-servicenaam:
 
 ```env
 OLLAMA_BASE_URL=http://127.0.0.1:11434
-OLLAMA_MODEL=gemma3:4b
+OLLAMA_MODEL=qwen3.5:4b
 ```
 
 Installeer en start Ollama volgens de instructies voor je besturingssysteem.
 Download daarna het model:
 
 ```bash
-ollama pull gemma3:4b
+ollama pull qwen3.5:4b
 ollama list
 ```
 
@@ -472,7 +475,7 @@ De belangrijkste instellingen zijn:
 ```env
 AI_ENABLED=true
 OLLAMA_BASE_URL=http://ollama:11434
-OLLAMA_MODEL=gemma3:4b
+OLLAMA_MODEL=qwen3.5:4b
 OLLAMA_TIMEOUT_SECONDS=120
 OLLAMA_MAX_RETRIES=1
 AI_ENRICH_MISSING_FIELDS=true
@@ -484,9 +487,14 @@ MAX_AI_SOURCE_CHARACTERS=50000
 MAX_AI_PROMPT_CHARACTERS=65000
 ```
 
+`AI_ENRICH_MISSING_FIELDS=true` schakelt de afzonderlijke
+**Ontbrekende metadata aanvullen**-actie in. Er vindt geen automatische
+metadata-aanvulling plaats: de gebruiker ziet eerst de parsepreview en kiest
+daarna zelf of Qwen3.5 uitsluitend de genoemde lege velden mag aanvullen.
+
 Normale imports blijven werken wanneer `AI_ENABLED=false`, Ollama offline is
 of het model nog niet is geïnstalleerd. Alleen AI-acties geven dan een gerichte
-foutmelding. Zie [de Gemma-importarchitectuur](docs/gemma-import-architecture.md)
+foutmelding. Zie [de Qwen3.5-importarchitectuur](docs/qwen35-import-architecture.md)
 voor de hergebruikte componenten en de gekozen grens tussen preview en opslag.
 
 Probleemoplossing:
@@ -495,7 +503,7 @@ Probleemoplossing:
 - `docker compose logs ollama` toont model- en runtimefouten.
 - `docker run --rm --gpus all ubuntu nvidia-smi` controleert of Docker toegang
   heeft tot de NVIDIA-GPU.
-- `docker compose exec ollama ollama list` controleert of `gemma3:4b`
+- `docker compose exec ollama ollama list` controleert of `qwen3.5:4b`
   beschikbaar is.
 - `docker compose exec ollama ollama ps` toont welk model momenteel geladen
   is en of het op CPU, GPU of een combinatie daarvan draait.
@@ -513,12 +521,17 @@ nodig.
 
 Nieuwe Discord-interacties:
 
-- Na een normale preview staat `Parse met AI`; het normale resultaat blijft
-  beschikbaar totdat Gemma met succes een nieuwe preview heeft gemaakt.
-- Na een mislukte normale parse staan `Opnieuw met AI` en `Annuleren`.
+- Na een normale preview staat `Hele recept opnieuw met AI`; het normale
+  resultaat blijft beschikbaar totdat Qwen3.5 met succes een nieuwe preview
+  heeft gemaakt.
+- Als metadata zoals tags, maaltijdtype, porties, tijden of moeilijkheid
+  ontbreekt, staat er apart `Ontbrekende metadata aanvullen`. Die actie vult
+  alleen lege, veilige velden in en overschrijft nooit bestaande waarden.
+- Na een mislukte normale parse staan `Recept herstellen met AI` en
+  `Annuleren`.
 - `/recept upload` accepteert naast tekstbestanden één JPEG-, PNG- of
   WebP-afbeelding van maximaal 10 MB. Afbeeldingen worden naar maximaal 2048
-  pixels verkleind, met EXIF-rotatie gecorrigeerd en daarna door Gemma
+  pixels verkleind, met EXIF-rotatie gecorrigeerd en daarna door Qwen3.5
   verwerkt.
 - Een AI-preview toont het gebruikte model, geschatte velden, nog ontbrekende
   velden en waarschuwingen. `Opslaan` blijft altijd een expliciete stap.
@@ -527,6 +540,7 @@ De bot gebruikt hiervoor:
 
 ```text
 POST /imports/{import_id}/parse-ai
+POST /imports/{import_id}/enrich-ai
 POST /imports/{import_id}/confirm
 POST /imports/{import_id}/cancel
 GET  /imports/{import_id}
@@ -535,15 +549,17 @@ POST /imports/upload/preview
 
 Handmatige controle:
 
-1. Start Compose en pull `gemma3:4b`.
+1. Start Compose en pull `qwen3.5:4b`.
 2. Importeer een geldige recepten-URL en controleer de normale preview.
-3. Kies `Parse met AI`, controleer de herkomstregel en bevestig de nieuwe
-   preview.
-4. Upload een screenshot via `/recept upload` en controleer dat opslaan pas
+3. Kies `Hele recept opnieuw met AI` en controleer de volledige nieuwe preview.
+4. Gebruik bij ontbrekende tags of andere metadata daarna
+   `Ontbrekende metadata aanvullen`; controleer dat alleen de aangekondigde
+   lege velden zijn ingevuld en bestaande waarden gelijk zijn gebleven.
+5. Upload een screenshot via `/recept upload` en controleer dat opslaan pas
    na bevestiging plaatsvindt.
-5. Stop `ollama`, start nogmaals een AI-actie en controleer de begrijpelijke
+6. Stop `ollama`, start nogmaals een AI-actie en controleer de begrijpelijke
    foutmelding; een normale preview moet intact blijven.
-6. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
+7. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
    onder `IMPORTS_PATH/pending-images` verdwijnt.
 
 Bekende beperking: importsessies zijn proceslokaal. Een API-herstart maakt
@@ -1040,7 +1056,7 @@ De website-importer leest geen `file://`-URL's. Lokale bestanden worden uitsluit
 
 ## Huidige projectfase
 
-Fase 1 t/m 4 en de lokale Gemma-importlaag zijn functioneel compleet voor de huidige scope:
+Fase 1 t/m 4 en de lokale Qwen3.5-importlaag zijn functioneel compleet voor de huidige scope:
 
 - Website-import.
 - Fallbackextractie.
@@ -1048,7 +1064,7 @@ Fase 1 t/m 4 en de lokale Gemma-importlaag zijn functioneel compleet voor de hui
 - Markdown-opslag.
 - Duplicaatdetectie.
 - Lokale HTML-, Markdown-, tekst- en afbeeldingsimport.
-- Handmatige Gemma-fallback, AI-herparse en voorzichtige metadata-verrijking.
+- Handmatige Qwen3.5-fallback, AI-herparse en expliciete metadata-verrijking.
 - Debugopslag.
 - Tests en integratiechecks.
 - Discord als primaire invoerinterface, inclusief preview- en bevestigingsflow.

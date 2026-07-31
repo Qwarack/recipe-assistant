@@ -25,6 +25,8 @@ class RecipeImportMetadata:
     extracted_fields: list[str]
     estimated_fields: list[str]
     missing_fields: list[str]
+    enrichable_fields: list[str]
+    unsafe_to_guess_fields: list[str]
     warnings: list[str]
 
 
@@ -132,6 +134,11 @@ def _parse_import_response(
             extracted_fields=metadata_payload.get("extracted_fields", []),
             estimated_fields=metadata_payload.get("estimated_fields", []),
             missing_fields=metadata_payload.get("missing_fields", []),
+            enrichable_fields=metadata_payload.get("enrichable_fields", []),
+            unsafe_to_guess_fields=metadata_payload.get(
+                "unsafe_to_guess_fields",
+                [],
+            ),
             warnings=metadata_payload.get("warnings", []),
         )
 
@@ -439,6 +446,26 @@ class RecipeApiClient:
                     "reason": reason,
                     "discord_user_id": discord_user_id,
                 },
+            )
+
+        response.raise_for_status()
+        return _parse_import_response(response.json())
+
+    async def enrich_import_metadata_with_ai(
+        self,
+        import_id: str,
+        *,
+        discord_user_id: int,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/{import_id}/enrich-ai"
+
+        async with httpx.AsyncClient(
+            timeout=max(self.timeout_seconds, 130.0),
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={"discord_user_id": discord_user_id},
             )
 
         response.raise_for_status()

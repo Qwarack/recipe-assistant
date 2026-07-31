@@ -127,6 +127,12 @@ def create_bot() -> commands.Bot:
                 discord_user_id=interaction.user.id,
             )
 
+        async def enrich_metadata_with_ai() -> RecipeImportResponse:
+            return await api_client.enrich_import_metadata_with_ai(
+                result.import_id,
+                discord_user_id=interaction.user.id,
+            )
+
         async def cancel_import() -> None:
             await api_client.cancel_import(
                 result.import_id,
@@ -144,6 +150,7 @@ def create_bot() -> commands.Bot:
             failed_view = ImportFailedView(
                 api_client=api_client,
                 retry_action=parse_with_ai,
+                enrichment_action=enrich_metadata_with_ai,
                 confirm_action=confirm_import,
                 cancel_action=cancel_import,
                 owner_id=interaction.user.id,
@@ -162,6 +169,12 @@ def create_bot() -> commands.Bot:
             import_action=(confirm_import if result.ai_enabled else save_website),
             owner_id=interaction.user.id,
             ai_reparse_action=parse_with_ai if result.ai_enabled else None,
+            ai_enrichment_action=(
+                enrich_metadata_with_ai if result.ai_enabled else None
+            ),
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
             confirm_action=confirm_import,
             cancel_action=cancel_import if result.ai_enabled else None,
         )
@@ -585,6 +598,12 @@ def create_bot() -> commands.Bot:
                 discord_user_id=interaction.user.id,
             )
 
+        async def enrich_upload_metadata_with_ai() -> RecipeImportResponse:
+            return await api_client.enrich_import_metadata_with_ai(
+                result.import_id,
+                discord_user_id=interaction.user.id,
+            )
+
         async def cancel_upload() -> None:
             await api_client.cancel_import(
                 result.import_id,
@@ -602,6 +621,7 @@ def create_bot() -> commands.Bot:
             failed_view = ImportFailedView(
                 api_client=api_client,
                 retry_action=parse_upload_with_ai,
+                enrichment_action=enrich_upload_metadata_with_ai,
                 confirm_action=confirm_upload,
                 cancel_action=cancel_upload,
                 owner_id=interaction.user.id,
@@ -623,6 +643,12 @@ def create_bot() -> commands.Bot:
             import_action=(confirm_upload if result.ai_enabled else save_upload),
             owner_id=interaction.user.id,
             ai_reparse_action=(parse_upload_with_ai if result.ai_enabled else None),
+            ai_enrichment_action=(
+                enrich_upload_metadata_with_ai if result.ai_enabled else None
+            ),
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
             confirm_action=confirm_upload,
             cancel_action=cancel_upload if result.ai_enabled else None,
             ai_generated=ai_generated,

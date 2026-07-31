@@ -248,7 +248,7 @@ def test_parse_import_with_ai_sends_reason_and_user() -> None:
                 "warnings": [],
                 "metadata": {
                     "parse_method": "ai_reparse",
-                    "ai_model": "gemma3:4b",
+                    "ai_model": "qwen3.5:4b",
                 },
             },
         )
@@ -268,7 +268,49 @@ def test_parse_import_with_ai_sends_reason_and_user() -> None:
 
     assert result.metadata is not None
     assert result.metadata.parse_method == "ai_reparse"
-    assert result.metadata.ai_model == "gemma3:4b"
+    assert result.metadata.ai_model == "qwen3.5:4b"
+
+
+def test_enrich_import_metadata_with_ai_sends_user() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == (
+            "/imports/11111111-1111-1111-1111-111111111111/enrich-ai"
+        )
+        assert json.loads(request.content) == {"discord_user_id": 123}
+        return httpx.Response(
+            200,
+            json={
+                "import_id": "11111111-1111-1111-1111-111111111111",
+                "status": "success",
+                "destination": None,
+                "recipe": None,
+                "warnings": [],
+                "metadata": {
+                    "parse_method": "ai_enrichment",
+                    "ai_model": "qwen3.5:4b",
+                    "estimated_fields": ["tags"],
+                    "enrichable_fields": [],
+                },
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.enrich_import_metadata_with_ai(
+            "11111111-1111-1111-1111-111111111111",
+            discord_user_id=123,
+        )
+    )
+
+    assert result.metadata is not None
+    assert result.metadata.parse_method == "ai_enrichment"
+    assert result.metadata.estimated_fields == ["tags"]
+    assert result.metadata.enrichable_fields == []
 
 
 def test_failed_preview_response_remains_retryable() -> None:

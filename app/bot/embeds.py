@@ -18,11 +18,28 @@ DUTCH_WEEKDAYS = {
     6: "Zondag",
 }
 
+RECIPE_FIELD_LABELS = {
+    "servings": "porties",
+    "prep_time_minutes": "voorbereidingstijd",
+    "cook_time_minutes": "bereidingstijd",
+    "total_time_minutes": "totale tijd",
+    "difficulty": "moeilijkheid",
+    "meal_types": "maaltijdtype",
+    "tags": "tags",
+}
+
 
 def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
         return value
     return f"{value[: limit - 1]}…"
+
+
+def recipe_field_label(field_name: str) -> str:
+    if field_name.startswith("ingredients.") and field_name.endswith(".quantity"):
+        _, index, _ = field_name.split(".", maxsplit=2)
+        return f"hoeveelheid van ingrediënt {int(index) + 1}"
+    return RECIPE_FIELD_LABELS.get(field_name, field_name.replace("_", " "))
 
 
 def build_recipe_import_embed(
@@ -42,7 +59,7 @@ def build_recipe_import_embed(
 
         if result.warnings:
             lines = [
-                f"â€¢ {warning.get('message', 'Onbekende importfout')}"
+                f"• {warning.get('message', 'Onbekende importfout')}"
                 for warning in result.warnings
             ]
             for index, chunk in enumerate(split_text(lines), start=1):
@@ -132,18 +149,35 @@ def build_recipe_import_embed(
 
     if result.metadata is not None and result.metadata.estimated_fields:
         embed.add_field(
-            name="AI-geschat",
+            name="Door AI geschat",
             value="\n".join(
-                f"â€¢ {field_name}" for field_name in result.metadata.estimated_fields
+                f"• {recipe_field_label(field_name)}"
+                for field_name in result.metadata.estimated_fields
             )[:1024],
             inline=False,
         )
 
-    if result.metadata is not None and result.metadata.missing_fields:
+    if result.metadata is not None and result.metadata.enrichable_fields:
         embed.add_field(
-            name="Nog ontbrekend",
+            name="Ontbrekende metadata — optioneel aan te vullen",
+            value=(
+                "\n".join(
+                    f"• {recipe_field_label(field_name)}"
+                    for field_name in result.metadata.enrichable_fields
+                )
+                + "\n\nKies **Ontbrekende metadata aanvullen** om alleen deze "
+                "lege velden door Qwen3.5 te laten invullen. Bestaande gegevens "
+                "worden niet overschreven."
+            )[:1024],
+            inline=False,
+        )
+
+    if result.metadata is not None and result.metadata.unsafe_to_guess_fields:
+        embed.add_field(
+            name="Blijft leeg — niet veilig om te schatten",
             value="\n".join(
-                f"â€¢ {field_name}" for field_name in result.metadata.missing_fields
+                f"• {recipe_field_label(field_name)}"
+                for field_name in result.metadata.unsafe_to_guess_fields
             )[:1024],
             inline=False,
         )

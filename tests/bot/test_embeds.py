@@ -5,6 +5,7 @@ from app.bot.api_client import (
     MealPlan,
     MealPlanEntry,
     RecipeDetail,
+    RecipeImportMetadata,
     RecipeImportResponse,
     RecipePreview,
     UnfilledMealPlanSlot,
@@ -73,6 +74,54 @@ def test_embed_includes_warnings() -> None:
     )
 
     assert "similar recipe" in warning_field.value
+
+
+def test_embed_explains_optional_metadata_enrichment() -> None:
+    result = RecipeImportResponse(
+        import_id="abc123",
+        status="success",
+        destination=None,
+        recipe=RecipePreview(
+            title="Soep",
+            servings=4,
+            prep_time_minutes=10,
+            cook_time_minutes=20,
+            total_time_minutes=30,
+            ingredient_count=2,
+            instruction_count=3,
+            source_url=None,
+        ),
+        warnings=[],
+        metadata=RecipeImportMetadata(
+            parse_method="ai_reparse",
+            parser_name="ollama:qwen3.5:4b",
+            ai_model="qwen3.5:4b",
+            extracted_fields=[],
+            estimated_fields=[],
+            missing_fields=["tags", "meal_types", "ingredients.0.quantity"],
+            enrichable_fields=["tags", "meal_types"],
+            unsafe_to_guess_fields=["ingredients.0.quantity"],
+            warnings=[],
+        ),
+        ai_enabled=True,
+    )
+
+    embed = build_recipe_import_embed(result)
+
+    metadata_field = next(
+        field
+        for field in embed.fields
+        if field.name == "Ontbrekende metadata — optioneel aan te vullen"
+    )
+    unsafe_field = next(
+        field
+        for field in embed.fields
+        if field.name == "Blijft leeg — niet veilig om te schatten"
+    )
+    assert "tags" in metadata_field.value
+    assert "maaltijdtype" in metadata_field.value
+    assert "Bestaande gegevens worden niet overschreven" in metadata_field.value
+    assert "hoeveelheid van ingrediënt 1" in unsafe_field.value
 
 
 def test_builds_recipe_detail_embed() -> None:

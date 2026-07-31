@@ -45,7 +45,7 @@ def _orchestrator(
         importer=importer,
         enrichment_service=enrichment,
         source_loader=loader,
-        ai_model="gemma3:4b",
+        ai_model="qwen3.5:4b",
         enrich_missing_fields=False,
     )
 
@@ -144,7 +144,55 @@ def test_failed_normal_parse_can_be_retried_with_same_source() -> None:
     assert session.previous_results[-1].status is ImportStatus.FAILED
 
 
-def test_normal_parse_stays_usable_when_enrichment_fails() -> None:
+def test_ai_parse_offers_metadata_enrichment_without_running_it_automatically() -> None:
+    repository = ImportSessionRepository()
+    importer = AsyncMock()
+    incomplete = _recipe("AI soup").model_copy(
+        update={
+            "servings": None,
+            "tags": [],
+        }
+    )
+    importer.import_text.return_value = AIRecipeImport(
+        recipe=incomplete,
+        extracted_fields=["title", "ingredients", "instructions"],
+        estimated_fields=[],
+        warnings=[],
+    )
+    enrichment = AsyncMock()
+    loader = AsyncMock()
+    loader.load_text.return_value = "Original source"
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=importer,
+        enrichment_service=enrichment,
+        source_loader=loader,
+        ai_model="qwen3.5:4b",
+        enrich_missing_fields=True,
+    )
+    normal_result = ImportResult(status=ImportStatus.SUCCESS, recipe=_recipe())
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+
+    session = asyncio.run(
+        orchestrator.parse_with_ai(
+            normal_result.import_id,
+            reason=AIParseReason.USER_REQUESTED_REPARSE,
+        )
+    )
+
+    enrichment.enrich.assert_not_awaited()
+    assert session.active_result.recipe.servings is None
+    assert session.active_result.recipe.tags == []
+    assert session.metadata.enrichable_fields == ["servings", "tags"]
+
+
+def test_manual_enrichment_failure_preserves_current_preview() -> None:
     repository = ImportSessionRepository()
     importer = AsyncMock()
     enrichment = AsyncMock()
@@ -156,7 +204,7 @@ def test_normal_parse_stays_usable_when_enrichment_fails() -> None:
         importer=importer,
         enrichment_service=enrichment,
         source_loader=loader,
-        ai_model="gemma3:4b",
+        ai_model="qwen3.5:4b",
         enrich_missing_fields=True,
     )
     incomplete = _recipe().model_copy(
@@ -177,11 +225,15 @@ def test_normal_parse_stays_usable_when_enrichment_fails() -> None:
         ),
     )
 
-    session = asyncio.run(orchestrator.enrich_normal_result(normal_result.import_id))
+    with pytest.raises(AIUnavailableError):
+        asyncio.run(orchestrator.enrich_missing_metadata(normal_result.import_id))
 
+    session = repository.get(normal_result.import_id)
     assert session.active_result.recipe.title == "Normal soup"
-    assert session.active_result.status is ImportStatus.PARTIAL
-    assert session.active_result.warnings[-1].code == "ai_enrichment_failed"
+    assert session.active_result.recipe.servings is None
+    assert session.active_result.warnings == []
+    assert session.status is ImportProcessingStatus.AWAITING_CONFIRMATION
+    assert session.metadata.attempts[-1].success is False
 
 
 def test_normal_enrichment_only_publishes_successful_merge() -> None:
@@ -203,7 +255,7 @@ def test_normal_enrichment_only_publishes_successful_merge() -> None:
         importer=importer,
         enrichment_service=enrichment,
         source_loader=loader,
-        ai_model="gemma3:4b",
+        ai_model="qwen3.5:4b",
         enrich_missing_fields=True,
     )
     normal_result = ImportResult(
@@ -218,8 +270,11 @@ def test_normal_enrichment_only_publishes_successful_merge() -> None:
         ),
     )
 
-    session = asyncio.run(orchestrator.enrich_normal_result(normal_result.import_id))
+    session = asyncio.run(orchestrator.enrich_missing_metadata(normal_result.import_id))
 
     assert session.active_result.recipe.servings == 6
     assert session.previous_results[-1].recipe.servings is None
     assert session.metadata.estimated_fields == ["servings"]
+    assert session.metadata.parse_method is ParseMethod.AI_ENRICHMENT
+    assert session.metadata.enrichable_fields == []
+    assert session.metadata.attempts[-1].success is True

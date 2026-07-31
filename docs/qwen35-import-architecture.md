@@ -1,4 +1,4 @@
-# Gemma-importarchitectuur
+# Qwen3.5-importarchitectuur
 
 Deze implementatie bouwt voort op de bestaande importketen en introduceert geen
 tweede receptmodel of directe AI-opslag.
@@ -16,7 +16,8 @@ tweede receptmodel of directe AI-opslag.
 - `app/api/imports.py` en `app/api/uploads.py`: FastAPI blijft de grens tussen
   Discord en de importlogica.
 - `app/bot/views.py`: de bestaande preview met opslaan en annuleren wordt
-  uitgebreid met AI-herparse en een foutview.
+  uitgebreid met een volledige AI-herparse, een afzonderlijke
+  metadata-aanvulactie en een foutview.
 - `app/bot/attachments.py`: de bestaande attachmentvalidatie wordt uitgebreid
   voor JPEG, PNG en WebP.
 - `app/services/markdown_renderer.py` en `app/services/recipe_storage.py`: AI
@@ -26,15 +27,16 @@ tweede receptmodel of directe AI-opslag.
 
 - `app/ai/`: een dunne Ollama-client, strikte AI-outputschema's, prompts en
   getypeerde fouten.
-- `app/importers/ai_recipe.py`: omzetting van gevalideerde Gemma-output naar
+- `app/importers/ai_recipe.py`: omzetting van gevalideerde Qwen3.5-output naar
   het bestaande `Recipe`-model.
 - `app/services/import_session_repository.py`: oorspronkelijke input, actieve
   preview, herkomstmetadata, status en parsepogingen tijdens de
   bevestigingsflow.
 - `app/services/recipe_enrichment_service.py`: ontbrekende velden detecteren
-  en uitsluitend lege, veilige velden aanvullen.
+  en na een expliciete gebruikerskeuze uitsluitend lege, veilige velden
+  aanvullen.
 - `app/services/ai_import_orchestrator.py`: AI-fallback, volledige herparse,
-  vision-import en maximaal één verrijkingspoging.
+  vision-import en afzonderlijke metadata-verrijking.
 - `app/services/image_processing.py`: afbeeldingvalidatie, EXIF-correctie,
   verkleining en normalisatie vóór verzending naar Ollama.
 

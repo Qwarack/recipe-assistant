@@ -281,7 +281,7 @@ def _raise_image_ai_error(exc: AIServiceError, *, import_id: UUID) -> None:
     detail: dict[str, str] = {
         "import_id": str(import_id),
         "message": (
-            "Gemma is momenteel niet bereikbaar. Controleer of de "
+            "Qwen3.5 is momenteel niet bereikbaar. Controleer of de "
             "Ollama-container actief is."
         ),
     }
@@ -289,7 +289,7 @@ def _raise_image_ai_error(exc: AIServiceError, *, import_id: UUID) -> None:
 
     if isinstance(exc, AIModelNotFoundError):
         detail["message"] = (
-            "Het geconfigureerde Gemma-model is nog niet geïnstalleerd op Ollama."
+            "Het geconfigureerde Qwen3.5-model is nog niet geïnstalleerd op Ollama."
         )
     elif isinstance(exc, AITimeoutError):
         status_code = status.HTTP_504_GATEWAY_TIMEOUT
@@ -306,7 +306,7 @@ def _raise_image_ai_error(exc: AIServiceError, *, import_id: UUID) -> None:
         )
     elif not isinstance(exc, AIUnavailableError):
         status_code = status.HTTP_422_UNPROCESSABLE_CONTENT
-        detail["message"] = "De afbeelding kon niet met Gemma worden verwerkt."
+        detail["message"] = "De afbeelding kon niet met Qwen3.5 worden verwerkt."
 
     raise HTTPException(status_code=status_code, detail=detail) from exc
 

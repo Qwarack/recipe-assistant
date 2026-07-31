@@ -25,7 +25,7 @@ class RecipePreviewService:
     ) -> ImportResult:
         return self.importer.import_recipe(source)
 
-    async def preview_with_enrichment(
+    async def preview_with_ai_session(
         self,
         source: str,
         *,
@@ -41,9 +41,6 @@ class RecipePreviewService:
             source=self.source_factory(source),
             discord_user_id=discord_user_id,
         )
-
-        if result.recipe is not None:
-            session = await self.ai_orchestrator.enrich_normal_result(result.import_id)
 
         self.last_session = session
         return session.active_result
