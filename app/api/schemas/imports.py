@@ -37,6 +37,10 @@ class AIEnrichmentRequest(BaseModel):
     discord_user_id: int | None = None
 
 
+class OpenAIFallbackRequest(BaseModel):
+    discord_user_id: int | None = None
+
+
 class WebsiteImportResponse(BaseModel):
     import_id: UUID
     created_at: datetime
@@ -44,5 +48,8 @@ class WebsiteImportResponse(BaseModel):
     destination: Path | None = None
     recipe: RecipePreview | None = None
     warnings: list[ImportWarning]
+    confidence: float | None = Field(default=None, ge=0, le=1)
     metadata: RecipeImportMetadata | None = None
     ai_enabled: bool = False
+    openai_enabled: bool = False
+    openai_fallback_available: bool = False

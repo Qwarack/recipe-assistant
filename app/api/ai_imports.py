@@ -5,8 +5,11 @@ from uuid import UUID
 from fastapi import APIRouter, Depends, HTTPException, Response, status
 
 from app.ai.exceptions import (
+    AIAuthenticationError,
+    AIFallbackNotAllowedError,
     AIInvalidResponseError,
     AIModelNotFoundError,
+    AIRateLimitError,
     AIServiceError,
     AITimeoutError,
     AIUnavailableError,
@@ -20,6 +23,7 @@ from app.api.imports import build_recipe_preview, create_import_service
 from app.api.schemas.imports import (
     AIEnrichmentRequest,
     AIReparseRequest,
+    OpenAIFallbackRequest,
     WebsiteImportResponse,
 )
 from app.core.config import get_settings
@@ -54,6 +58,7 @@ def _response_from_session(
     destination: Path | None = None,
 ) -> WebsiteImportResponse:
     result = session.active_result
+    settings = get_settings()
     return WebsiteImportResponse(
         import_id=result.import_id,
         created_at=result.created_at,
@@ -61,8 +66,14 @@ def _response_from_session(
         destination=destination,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
         metadata=session.metadata,
-        ai_enabled=get_settings().ai_enabled,
+        ai_enabled=settings.ai_enabled,
+        openai_enabled=settings.openai_configured,
+        openai_fallback_available=(
+            settings.openai_configured
+            and AIImportOrchestrator.is_openai_fallback_allowed(session)
+        ),
     )
 
 
@@ -124,6 +135,92 @@ async def parse_import_with_ai(
             detail=(
                 "Qwen3.5 is momenteel niet bereikbaar. Controleer of de "
                 "Ollama-container actief is."
+            ),
+        ) from exc
+
+    return _response_from_session(session)
+
+
+@router.post(
+    "/{import_id}/parse-openai",
+    response_model=WebsiteImportResponse,
+)
+async def parse_import_with_openai(
+    import_id: UUID,
+    request: OpenAIFallbackRequest,
+    orchestrator: Annotated[
+        AIImportOrchestrator,
+        Depends(create_ai_import_orchestrator),
+    ],
+) -> WebsiteImportResponse:
+    if not get_settings().openai_configured:
+        raise HTTPException(
+            status_code=status.HTTP_503_SERVICE_UNAVAILABLE,
+            detail=(
+                "De ChatGPT-fallback is niet geconfigureerd. Voeg "
+                "OPENAI_API_KEY toe aan .env en herstart de API."
+            ),
+        )
+
+    try:
+        session = await orchestrator.parse_with_openai(
+            import_id,
+            discord_user_id=request.discord_user_id,
+        )
+    except ImportSessionNotFoundError as exc:
+        raise HTTPException(status_code=404, detail=str(exc)) from exc
+    except ImportPermissionError as exc:
+        raise HTTPException(status_code=403, detail=str(exc)) from exc
+    except (ImportAlreadyProcessingError, ImportSessionClosedError) as exc:
+        raise HTTPException(status_code=409, detail=str(exc)) from exc
+    except AIFallbackNotAllowedError as exc:
+        raise HTTPException(
+            status_code=409,
+            detail=(
+                "ChatGPT is pas beschikbaar nadat Qwen3.5 is geprobeerd en "
+                "mislukt of onvoldoende betrouwbaar bleef."
+            ),
+        ) from exc
+    except AIAuthenticationError as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "OpenAI heeft de API-key geweigerd. Controleer OPENAI_API_KEY "
+                "in .env; het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except AIRateLimitError as exc:
+        raise HTTPException(
+            status_code=429,
+            detail=(
+                "OpenAI heeft de limiet of het beschikbare tegoed bereikt. "
+                "Het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except AITimeoutError as exc:
+        raise HTTPException(
+            status_code=504,
+            detail=(
+                "De ChatGPT-parse duurde te lang. "
+                "Het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except (AIInvalidResponseError, AIValidationError) as exc:
+        raise HTTPException(
+            status_code=422,
+            detail=(
+                "ChatGPT gaf geen geldig recept terug. "
+                "Het oorspronkelijke recept is niet gewijzigd."
+            ),
+        ) from exc
+    except AIImportSourceError as exc:
+        raise HTTPException(status_code=422, detail=str(exc)) from exc
+    except (AIUnavailableError, AIServiceError) as exc:
+        raise HTTPException(
+            status_code=503,
+            detail=(
+                "De OpenAI API is momenteel niet bereikbaar. "
+                "Het oorspronkelijke recept is niet gewijzigd."
             ),
         ) from exc
 

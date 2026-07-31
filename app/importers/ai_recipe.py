@@ -1,11 +1,11 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import UTC, datetime
 
 from pydantic import ValidationError
 
-from app.ai.client import OllamaClient
 from app.ai.exceptions import AIValidationError
 from app.ai.prompts import build_full_recipe_extraction_prompt
+from app.ai.protocols import JSONGenerator
 from app.ai.schemas import AIRecipeResult
 from app.models.recipe import Ingredient, Recipe, SourceType
 
@@ -23,13 +23,15 @@ class AIRecipeImport:
     extracted_fields: list[str]
     estimated_fields: list[str]
     warnings: list[str]
+    confidence: float | None = None
+    confidence_reasons: list[str] = field(default_factory=list)
 
 
 class AIRecipeImporter:
     def __init__(
         self,
         *,
-        client: OllamaClient,
+        client: JSONGenerator,
         max_source_characters: int = 50_000,
     ) -> None:
         self.client = client
@@ -45,6 +47,7 @@ class AIRecipeImporter:
             source_text=source_text,
             image_input=False,
             max_source_characters=self.max_source_characters,
+            include_schema=self.client.uses_structured_outputs is not True,
         )
         payload = await self.client.generate_json(prompt=prompt)
         return self._validate_and_map(payload, context=context)
@@ -60,6 +63,7 @@ class AIRecipeImporter:
             source_text=source_text,
             image_input=True,
             max_source_characters=self.max_source_characters,
+            include_schema=self.client.uses_structured_outputs is not True,
         )
         payload = await self.client.generate_json(
             prompt=prompt,
@@ -80,7 +84,12 @@ class AIRecipeImporter:
                 "The model output does not satisfy the recipe schema"
             ) from exc
 
-        return map_ai_result_to_recipe(result, context=context, model=self.client.model)
+        return map_ai_result_to_recipe(
+            result,
+            context=context,
+            model=self.client.model,
+            provider=self.client.provider,
+        )
 
 
 def map_ai_result_to_recipe(
@@ -88,6 +97,7 @@ def map_ai_result_to_recipe(
     *,
     context: AIRecipeContext,
     model: str,
+    provider: str = "ollama",
 ) -> AIRecipeImport:
     missing_required: list[str] = []
 
@@ -121,7 +131,7 @@ def map_ai_result_to_recipe(
         source_type=context.source_type,
         source_url=context.source_url,
         source_name=context.source_name,
-        extractor=f"ollama:{model}",
+        extractor=f"{provider}:{model}",
         imported_at=datetime.now(UTC),
         servings=result.servings,
         prep_time_minutes=result.prep_time_minutes,
@@ -140,7 +150,14 @@ def map_ai_result_to_recipe(
     extracted_fields = [
         field_name
         for field_name, value in raw_fields.items()
-        if field_name not in {"warnings", "estimated_fields", "description"}
+        if field_name
+        not in {
+            "warnings",
+            "estimated_fields",
+            "description",
+            "confidence",
+            "confidence_reasons",
+        }
         and field_name not in result.estimated_fields
         and value not in (None, "", [])
     ]
@@ -150,4 +167,6 @@ def map_ai_result_to_recipe(
         extracted_fields=extracted_fields,
         estimated_fields=result.estimated_fields,
         warnings=list(dict.fromkeys(result.warnings)),
+        confidence=result.confidence,
+        confidence_reasons=list(dict.fromkeys(result.confidence_reasons)),
     )

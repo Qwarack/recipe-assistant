@@ -16,6 +16,7 @@ De applicatie ondersteunt momenteel:
 - Importeren uit handmatig geplakte recepttekst.
 - Importeren uit een JPEG-, PNG- of WebP-afbeelding met Qwen3.5 vision.
 - Handmatige AI-fallback en AI-herparse vanuit een Discord-preview.
+- Optionele, handmatige ChatGPT-API-fallback nadat Qwen3.5 is mislukt.
 - Voorzichtige AI-verrijking van ontbrekende receptmetadata.
 - Normalisatie van ingrediënten, hoeveelheden, eenheden, servings, tijden, tags en maaltijdtypes.
 - Opslag als Markdown met YAML-frontmatter.
@@ -71,7 +72,7 @@ Belangrijke onderdelen:
 
 ```text
 app/
-├── ai/                  Ollama-client, prompts en AI-schema's
+├── ai/                  Ollama/OpenAI-clients, prompts en AI-schema's
 ├── api/                 FastAPI-routes en API-schema's
 ├── bot/                 Discord-commando's, embeds en views
 ├── core/                Configuratie, logging en HTTP-client
@@ -249,7 +250,7 @@ Voorbeelden:
 de knoppen **Accepteren**, **Opnieuw genereren** en **Annuleren**. Alleen de
 gebruiker die het voorstel maakte kan die knoppen bedienen.
 
-## Lokale AI met Qwen3.5
+## AI met Qwen3.5 en optionele ChatGPT-fallback
 
 Ollama en Qwen3.5 vormen een optionele lokale laag boven op de bestaande
 parsers. Website-, tekst-, HTML- en Markdown-parsers blijven altijd de
@@ -259,6 +260,39 @@ gebruikerskeuze — voor het voorzichtig aanvullen van ontbrekende metadata.
 Een AI-resultaat wordt met Pydantic gevalideerd en pas na een Discord-preview
 en expliciete bevestiging opgeslagen. `qwen3.5:4b` ondersteunt zowel tekst als
 afbeeldingen en is daarom de standaard.
+
+Iedere parse krijgt daarnaast een confidence-score. Qwen en GPT rapporteren
+onzekerheid over onder andere OCR en bronkwaliteit; Python begrenst die score
+vervolgens op basis van ontbrekende velden, parserwaarschuwingen en geschatte
+waarden. De standaardroutering is:
+
+- `>= 95%`: preview is klaar voor de normale gebruikerscontrole;
+- `80-95%`: preview blijft bruikbaar, met een duidelijke extra waarschuwing;
+- `60-80%`: Discord beveelt één nieuwe lokale Qwen-poging aan;
+- `< 60%`, of na één onzekere lokale retry: ChatGPT kan als laatste optie
+  beschikbaar worden;
+- een onzeker GPT-resultaat vereist expliciet handmatige controle.
+
+Opslaan gebeurt bij iedere band pas na een gebruikersklik. Een externe
+ChatGPT-call gebeurt eveneens nooit automatisch.
+
+Als Qwen3.5 daadwerkelijk is geprobeerd en mislukt of onvoldoende betrouwbaar
+blijft, kan Discord optioneel een laatste knop tonen voor de OpenAI API. Deze
+cloudfallback:
+
+- wordt nooit automatisch aangeroepen;
+- is alleen beschikbaar met een geldige `OPENAI_API_KEY`;
+- stuurt opnieuw de oorspronkelijke URL-inhoud, tekst of afbeelding en nooit
+  de mislukte Qwen-uitvoer;
+- toont vóór gebruik dat de bron extern wordt verstuurd en dat API-kosten
+  kunnen ontstaan;
+- gebruikt standaard `gpt-5-nano` met minimale reasoning en een begrensde
+  uitvoer. OpenAI beschrijft dit als de snelste en goedkoopste GPT-5-variant
+  met structured outputs en afbeeldingsinput.
+
+Zie de officiële
+[GPT-5 nano-modelpagina](https://developers.openai.com/api/docs/models/gpt-5-nano)
+voor actuele mogelijkheden en tarieven.
 
 ### NVIDIA-GPU gebruiken met Docker op Ubuntu
 
@@ -478,9 +512,20 @@ OLLAMA_BASE_URL=http://ollama:11434
 OLLAMA_MODEL=qwen3.5:4b
 OLLAMA_TIMEOUT_SECONDS=120
 OLLAMA_MAX_RETRIES=1
+OPENAI_FALLBACK_ENABLED=true
+OPENAI_API_KEY=
+OPENAI_MODEL=gpt-5-nano
+OPENAI_BASE_URL=https://api.openai.com/v1
+OPENAI_TIMEOUT_SECONDS=120
+OPENAI_MAX_RETRIES=1
+OPENAI_MAX_OUTPUT_TOKENS=8000
 AI_ENRICH_MISSING_FIELDS=true
 AI_ALLOW_INGREDIENT_QUANTITY_ESTIMATES=false
 AI_ALLOW_TEMPERATURE_ESTIMATES=false
+AI_CONFIDENCE_HIGH_THRESHOLD=0.95
+AI_CONFIDENCE_WARNING_THRESHOLD=0.80
+AI_CONFIDENCE_RETRY_THRESHOLD=0.60
+AI_CONFIDENCE_MAX_LOCAL_RETRIES=1
 MAX_IMAGE_UPLOAD_BYTES=10485760
 MAX_IMAGE_DIMENSION=2048
 MAX_AI_SOURCE_CHARACTERS=50000
@@ -491,6 +536,24 @@ MAX_AI_PROMPT_CHARACTERS=65000
 **Ontbrekende metadata aanvullen**-actie in. Er vindt geen automatische
 metadata-aanvulling plaats: de gebruiker ziet eerst de parsepreview en kiest
 daarna zelf of Qwen3.5 uitsluitend de genoemde lege velden mag aanvullen.
+
+De vier `AI_CONFIDENCE_*`-waarden bepalen de confidence-banden en hoeveel
+lokale herhalingen worden aanbevolen voordat ChatGPT als laatste optie
+beschikbaar komt. De grenzen moeten oplopend zijn:
+`retry < warning < high`.
+
+Vul voor de laatste cloudfallback uitsluitend in de lokale, niet-gecommitteerde
+`.env` de sleutel in:
+
+```env
+OPENAI_API_KEY=sk-...
+```
+
+Laat de waarde leeg of zet `OPENAI_FALLBACK_ENABLED=false` om de optie volledig
+uit te schakelen. Na een wijziging moeten `api` en `bot` opnieuw worden
+aangemaakt. `compose.yml` geeft de sleutel alleen door aan de API-container; de
+Discord-bot ontvangt bewust een lege waarde. De sleutel wordt niet gelogd en
+hoort nooit in `.env.example` of Git te worden gezet.
 
 Normale imports blijven werken wanneer `AI_ENABLED=false`, Ollama offline is
 of het model nog niet is geïnstalleerd. Alleen AI-acties geven dan een gerichte
@@ -509,6 +572,8 @@ Probleemoplossing:
   is en of het op CPU, GPU of een combinatie daarvan draait.
 - Controleer dat `OLLAMA_MODEL` in `.env` exact overeenkomt met een tag uit
   `ollama list`.
+- Controleer bij een ontbrekende ChatGPT-knop of `OPENAI_API_KEY` niet leeg is
+  en `OPENAI_FALLBACK_ENABLED=true` staat.
 - Maak `api` en `bot` na een wijziging in `.env` opnieuw aan met
   `docker compose up -d --force-recreate api bot`; een gewone restart leest
   gewijzigde environmentvariabelen niet opnieuw in.
@@ -529,17 +594,23 @@ Nieuwe Discord-interacties:
   alleen lege, veilige velden in en overschrijft nooit bestaande waarden.
 - Na een mislukte normale parse staan `Recept herstellen met AI` en
   `Annuleren`.
+- Pas nadat een lokale Qwen3.5-poging mislukt, onder 60% scoort of na één retry
+  onder 80% blijft, verschijnt als laatste optie `Laatste poging met ChatGPT
+  (API)`. De waarschuwing vermeldt dat een klik de oorspronkelijke bron naar
+  OpenAI stuurt en API-kosten kan veroorzaken.
 - `/recept upload` accepteert naast tekstbestanden één JPEG-, PNG- of
   WebP-afbeelding van maximaal 10 MB. Afbeeldingen worden naar maximaal 2048
   pixels verkleind, met EXIF-rotatie gecorrigeerd en daarna door Qwen3.5
   verwerkt.
-- Een AI-preview toont het gebruikte model, geschatte velden, nog ontbrekende
-  velden en waarschuwingen. `Opslaan` blijft altijd een expliciete stap.
+- Een AI-preview toont het gebruikte model, confidence-percentage, de reden
+  voor een lagere score, de aanbevolen vervolgstap, geschatte velden, nog
+  ontbrekende velden en waarschuwingen. `Opslaan` blijft altijd expliciet.
 
 De bot gebruikt hiervoor:
 
 ```text
 POST /imports/{import_id}/parse-ai
+POST /imports/{import_id}/parse-openai
 POST /imports/{import_id}/enrich-ai
 POST /imports/{import_id}/confirm
 POST /imports/{import_id}/cancel
@@ -558,8 +629,12 @@ Handmatige controle:
 5. Upload een screenshot via `/recept upload` en controleer dat opslaan pas
    na bevestiging plaatsvindt.
 6. Stop `ollama`, start nogmaals een AI-actie en controleer de begrijpelijke
-   foutmelding; een normale preview moet intact blijven.
-7. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
+   foutmelding; een normale preview moet intact blijven. Zonder OpenAI-key mag
+   geen ChatGPT-knop verschijnen.
+7. Vul een testkey in, herstart `api` en `bot`, laat Qwen3.5 opnieuw mislukken
+   en controleer dat de ChatGPT-knop pas daarna verschijnt met de externe
+   bron- en kostenwaarschuwing.
+8. Annuleer een afbeeldingsimport en controleer dat het tijdelijke bestand
    onder `IMPORTS_PATH/pending-images` verdwijnt.
 
 Bekende beperking: importsessies zijn proceslokaal. Een API-herstart maakt
@@ -1020,7 +1095,8 @@ De testsuite bevat onder andere:
 - Snapshot-test voor de volledige Markdown-output.
 - Integratietest van HTML-fixture tot opgeslagen Markdown-bestand.
 - Test die controleert dat dezelfde URL geen tweede bestand maakt.
-- Tests voor de Ollama-client, schema-validatie, AI-verrijking en afbeeldingsimport.
+- Tests voor de Ollama- en OpenAI-clients, schema-validatie, AI-verrijking en
+  afbeeldingsimport.
 - Bot-tests voor de Discord-commando's, autorisatie en interactieve previews.
 
 ## Ontwikkelworkflow
@@ -1064,7 +1140,8 @@ Fase 1 t/m 4 en de lokale Qwen3.5-importlaag zijn functioneel compleet voor de h
 - Markdown-opslag.
 - Duplicaatdetectie.
 - Lokale HTML-, Markdown-, tekst- en afbeeldingsimport.
-- Handmatige Qwen3.5-fallback, AI-herparse en expliciete metadata-verrijking.
+- Handmatige Qwen3.5-fallback, AI-herparse, expliciete metadata-verrijking en
+  een afgeschermde OpenAI-fallback na lokaal falen.
 - Debugopslag.
 - Tests en integratiechecks.
 - Discord als primaire invoerinterface, inclusief preview- en bevestigingsflow.

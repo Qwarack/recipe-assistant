@@ -38,6 +38,8 @@ services:
       - .env
     environment:
       API_BASE_URL: http://api:8000
+      # The bot calls the API; only the API container may receive the OpenAI key.
+      OPENAI_API_KEY: ""
     depends_on:
       api:
         condition: service_healthy

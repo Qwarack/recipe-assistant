@@ -191,6 +191,8 @@ async def preview_website_recipe(
                     if getattr(service, "last_session", None) is not None
                     else None
                 ),
+                "openai_enabled": get_settings().openai_configured,
+                "openai_fallback_available": False,
             },
         )
 
@@ -201,12 +203,14 @@ async def preview_website_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
         metadata=(
             service.last_session.metadata
             if getattr(service, "last_session", None) is not None
             else None
         ),
         ai_enabled=get_settings().ai_enabled,
+        openai_enabled=get_settings().openai_configured,
     )
 
 
@@ -240,6 +244,7 @@ def import_website_recipe(
         destination=destination,
         warnings=result.warnings,
         recipe=build_recipe_preview(result),
+        confidence=result.confidence,
     )
 
 
@@ -271,6 +276,8 @@ async def preview_manual_recipe(
                     if getattr(service, "last_session", None) is not None
                     else None
                 ),
+                "openai_enabled": get_settings().openai_configured,
+                "openai_fallback_available": False,
             },
         )
 
@@ -281,12 +288,14 @@ async def preview_manual_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
         metadata=(
             service.last_session.metadata
             if getattr(service, "last_session", None) is not None
             else None
         ),
         ai_enabled=get_settings().ai_enabled,
+        openai_enabled=get_settings().openai_configured,
     )
 
 
@@ -323,4 +332,5 @@ def import_manual_recipe(
         destination=destination,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
     )

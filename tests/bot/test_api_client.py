@@ -313,6 +313,54 @@ def test_enrich_import_metadata_with_ai_sends_user() -> None:
     assert result.metadata.enrichable_fields == []
 
 
+def test_parse_import_with_openai_sends_only_user_and_parses_flags() -> None:
+    def handler(request: httpx.Request) -> httpx.Response:
+        assert request.method == "POST"
+        assert request.url.path == (
+            "/imports/11111111-1111-1111-1111-111111111111/parse-openai"
+        )
+        assert json.loads(request.content) == {"discord_user_id": 123}
+        return httpx.Response(
+            200,
+            json={
+                "import_id": "11111111-1111-1111-1111-111111111111",
+                "status": "success",
+                "destination": None,
+                "recipe": None,
+                "warnings": [],
+                "confidence": 0.76,
+                "metadata": {
+                    "parse_method": "openai_fallback",
+                    "ai_model": "gpt-5-nano",
+                    "confidence_action": "manual_review",
+                    "confidence_reasons": ["OCR remained unclear"],
+                },
+                "openai_enabled": True,
+                "openai_fallback_available": False,
+            },
+        )
+
+    client = RecipeApiClient(
+        base_url="http://api.test",
+        transport=httpx.MockTransport(handler),
+    )
+
+    result = asyncio.run(
+        client.parse_import_with_openai(
+            "11111111-1111-1111-1111-111111111111",
+            discord_user_id=123,
+        )
+    )
+
+    assert result.metadata is not None
+    assert result.metadata.ai_model == "gpt-5-nano"
+    assert result.metadata.confidence_action == "manual_review"
+    assert result.metadata.confidence_reasons == ["OCR remained unclear"]
+    assert result.confidence == 0.76
+    assert result.openai_enabled is True
+    assert result.openai_fallback_available is False
+
+
 def test_failed_preview_response_remains_retryable() -> None:
     def handler(request: httpx.Request) -> httpx.Response:
         return httpx.Response(

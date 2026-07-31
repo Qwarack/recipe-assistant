@@ -5,7 +5,11 @@ from pathlib import Path
 from time import monotonic
 from uuid import UUID
 
-from app.ai.exceptions import AIServiceError
+from app.ai.exceptions import (
+    AIAuthenticationError,
+    AIFallbackNotAllowedError,
+    AIServiceError,
+)
 from app.core.http_client import HttpFetchError, SafeHttpClient
 from app.importers.ai_recipe import (
     AIRecipeContext,
@@ -19,6 +23,7 @@ from app.models.import_result import (
 )
 from app.models.import_session import (
     AIParseReason,
+    ConfidenceAction,
     ImportProcessingStatus,
     ImportSession,
     ImportSource,
@@ -26,6 +31,7 @@ from app.models.import_session import (
     ParseMethod,
 )
 from app.models.recipe import SourceType
+from app.services.import_confidence import ConfidencePolicy
 from app.services.import_session_repository import ImportSessionRepository
 from app.services.recipe_enrichment_service import (
     RecipeEnrichmentService,
@@ -34,6 +40,12 @@ from app.services.recipe_enrichment_service import (
 from bs4 import BeautifulSoup
 
 logger = logging.getLogger(__name__)
+
+LOCAL_PARSE_METHODS = {
+    ParseMethod.AI_TEXT,
+    ParseMethod.AI_IMAGE,
+    ParseMethod.AI_REPARSE,
+}
 
 
 class AIImportSourceError(AIServiceError):
@@ -105,6 +117,9 @@ class AIImportOrchestrator:
         source_loader: SourceContextLoader,
         ai_model: str,
         enrich_missing_fields: bool = True,
+        openai_importer: AIRecipeImporter | None = None,
+        openai_model: str | None = None,
+        confidence_policy: ConfidencePolicy | None = None,
     ) -> None:
         self.repository = repository
         self.importer = importer
@@ -112,6 +127,9 @@ class AIImportOrchestrator:
         self.source_loader = source_loader
         self.ai_model = ai_model
         self.enrich_missing_fields = enrich_missing_fields
+        self.openai_importer = openai_importer
+        self.openai_model = openai_model
+        self.confidence_policy = confidence_policy or ConfidencePolicy()
 
     def register_normal_result(
         self,
@@ -128,7 +146,8 @@ class AIImportOrchestrator:
 
         if result.recipe is not None:
             self._update_missing_fields(session)
-            self.repository.update(session)
+        self._update_confidence(session, method=ParseMethod.NORMAL)
+        session = self.repository.update(session)
 
         return session
 
@@ -236,6 +255,11 @@ class AIImportOrchestrator:
             successful_attempt.success = True
             successful_attempt.warnings = enrichment.warnings
             self._update_missing_fields(session)
+            self._update_confidence(
+                session,
+                method=ParseMethod.AI_REPARSE,
+                estimated_fields=session.metadata.estimated_fields,
+            )
             updated = self.repository.update(session)
             self._log_attempt(
                 updated,
@@ -315,6 +339,13 @@ class AIImportOrchestrator:
             successful_attempt.success = True
             successful_attempt.warnings = imported.warnings
             self._update_missing_fields(session)
+            self._update_confidence(
+                session,
+                method=method,
+                model_confidence=imported.confidence,
+                model_reasons=imported.confidence_reasons,
+                estimated_fields=imported.estimated_fields,
+            )
             updated = self.repository.update(session)
             self._log_attempt(
                 updated,
@@ -323,6 +354,116 @@ class AIImportOrchestrator:
                 success=True,
             )
             return updated
+
+    async def parse_with_openai(
+        self,
+        import_id: UUID,
+        *,
+        discord_user_id: int | None = None,
+    ) -> ImportSession:
+        if self.openai_importer is None or self.openai_model is None:
+            raise AIAuthenticationError("OpenAI fallback is not configured")
+
+        started_at = monotonic()
+        self.repository.set_owner(import_id, discord_user_id)
+
+        async with self.repository.processing(import_id):
+            session = self.repository.get(import_id)
+            if not self.is_openai_fallback_allowed(session):
+                raise AIFallbackNotAllowedError(
+                    "OpenAI may only be used after a failed or low-confidence "
+                    "local AI parse"
+                )
+
+            attempt = ParseAttempt(
+                attempt_number=len(session.metadata.attempts) + 1,
+                method=ParseMethod.OPENAI_FALLBACK,
+                model=self.openai_model,
+            )
+            session.status = ImportProcessingStatus.PROCESSING_AI
+            session.metadata.attempts.append(attempt)
+            self.repository.update(session)
+
+            try:
+                imported = await self._parse_original_source_with(
+                    session,
+                    importer=self.openai_importer,
+                )
+            except AIServiceError as exc:
+                session = self.repository.get(import_id)
+                failed_attempt = session.metadata.attempts[-1]
+                failed_attempt.finished_at = datetime.now(UTC)
+                failed_attempt.error_code = type(exc).__name__
+                failed_attempt.success = False
+                session.status = ImportProcessingStatus.OPENAI_PARSE_FAILED
+                self.repository.update(session)
+                self._log_attempt(
+                    session,
+                    method=ParseMethod.OPENAI_FALLBACK,
+                    started_at=started_at,
+                    success=False,
+                    error_code=type(exc).__name__,
+                )
+                raise
+
+            session = self.repository.get(import_id)
+            previous_result = session.active_result
+            warnings = [
+                ImportWarning(code="ai_parse_warning", message=message)
+                for message in imported.warnings
+            ]
+            session.previous_results.append(previous_result)
+            session.active_result = ImportResult(
+                import_id=import_id,
+                created_at=session.created_at,
+                status=ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS,
+                recipe=imported.recipe,
+                warnings=warnings,
+                extractor=imported.recipe.extractor,
+                raw_input_reference=previous_result.raw_input_reference,
+            )
+            session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
+            session.metadata.parse_method = ParseMethod.OPENAI_FALLBACK
+            session.metadata.parser_name = imported.recipe.extractor
+            session.metadata.ai_model = self.openai_model
+            session.metadata.extracted_fields = imported.extracted_fields
+            session.metadata.estimated_fields = imported.estimated_fields
+            session.metadata.warnings = imported.warnings
+            successful_attempt = session.metadata.attempts[-1]
+            successful_attempt.finished_at = datetime.now(UTC)
+            successful_attempt.success = True
+            successful_attempt.warnings = imported.warnings
+            self._update_missing_fields(session)
+            self._update_confidence(
+                session,
+                method=ParseMethod.OPENAI_FALLBACK,
+                model_confidence=imported.confidence,
+                model_reasons=imported.confidence_reasons,
+                estimated_fields=imported.estimated_fields,
+            )
+            updated = self.repository.update(session)
+            self._log_attempt(
+                updated,
+                method=ParseMethod.OPENAI_FALLBACK,
+                started_at=started_at,
+                success=True,
+            )
+            return updated
+
+    @staticmethod
+    def is_openai_fallback_allowed(session: ImportSession) -> bool:
+        if session.metadata.confidence_action is ConfidenceAction.OFFER_OPENAI:
+            return True
+        if not session.metadata.attempts:
+            return False
+
+        latest_attempt = session.metadata.attempts[-1]
+        return (
+            latest_attempt.method in LOCAL_PARSE_METHODS and not latest_attempt.success
+        ) or (
+            latest_attempt.method is ParseMethod.OPENAI_FALLBACK
+            and not latest_attempt.success
+        )
 
     async def _parse_source(
         self,
@@ -347,6 +488,26 @@ class AIImportOrchestrator:
 
         source_text = await self.source_loader.load_text(session.source)
         return await self.importer.import_text(source_text, context=context)
+
+    async def _parse_original_source_with(
+        self,
+        session: ImportSession,
+        *,
+        importer: AIRecipeImporter,
+    ) -> AIRecipeImport:
+        context = AIRecipeContext(
+            source_type=session.source.source_type,
+            source_url=session.source.source_url,
+            source_name=session.source.original_filename,
+        )
+        if session.source.source_type is SourceType.IMAGE:
+            return await importer.import_image(
+                self.source_loader.load_image(session.source),
+                context=context,
+            )
+
+        source_text = await self.source_loader.load_text(session.source)
+        return await importer.import_text(source_text, context=context)
 
     @staticmethod
     def _method_for_reason(reason: AIParseReason) -> ParseMethod:
@@ -375,6 +536,81 @@ class AIImportOrchestrator:
         )
         session.metadata.unsafe_to_guess_fields = report.unsafe_to_guess
 
+    def _update_confidence(
+        self,
+        session: ImportSession,
+        *,
+        method: ParseMethod,
+        model_confidence: float | None = None,
+        model_reasons: list[str] | None = None,
+        estimated_fields: list[str] | None = None,
+    ) -> None:
+        local_successful_attempts = sum(
+            attempt.method in LOCAL_PARSE_METHODS and attempt.success
+            for attempt in session.metadata.attempts
+        )
+        assessment = self.confidence_policy.assess(
+            session.active_result,
+            method=method,
+            model_confidence=model_confidence,
+            model_reasons=model_reasons,
+            estimated_fields=estimated_fields,
+            local_successful_attempts=local_successful_attempts,
+        )
+        session.metadata.confidence_action = assessment.action
+        session.metadata.confidence_reasons = assessment.reasons
+
+        result = session.active_result
+        warnings = [
+            warning
+            for warning in result.warnings
+            if warning.code != "confidence_review_recommended"
+        ]
+        if (
+            result.recipe is not None
+            and assessment.action is not ConfidenceAction.READY
+        ):
+            warnings.append(
+                ImportWarning(
+                    code="confidence_review_recommended",
+                    message=self._confidence_warning(
+                        assessment.score,
+                        assessment.action,
+                    ),
+                )
+            )
+
+        status = result.status
+        if result.recipe is not None:
+            status = ImportStatus.PARTIAL if warnings else ImportStatus.SUCCESS
+        session.active_result = result.model_copy(
+            update={
+                "confidence": assessment.score,
+                "warnings": warnings,
+                "status": status,
+            }
+        )
+
+    @staticmethod
+    def _confidence_warning(
+        score: float,
+        action: ConfidenceAction,
+    ) -> str:
+        percentage = round(score * 100)
+        if action is ConfidenceAction.REVIEW_WARNING:
+            advice = "Controleer de preview extra zorgvuldig voordat je opslaat."
+        elif action is ConfidenceAction.TRY_LOCAL_AI:
+            advice = "Laat Qwen3.5 het oorspronkelijke recept controleren."
+        elif action is ConfidenceAction.RETRY_LOCAL_AI:
+            advice = "Probeer Qwen3.5 nog één keer voor een betrouwbaarder resultaat."
+        elif action is ConfidenceAction.OFFER_OPENAI:
+            advice = (
+                "Qwen3.5 blijft onzeker; ChatGPT is nu als laatste optie beschikbaar."
+            )
+        else:
+            advice = "Handmatige controle is nodig voordat je dit resultaat opslaat."
+        return f"Parse-confidence: {percentage}%. {advice}"
+
     def _log_attempt(
         self,
         session: ImportSession,
@@ -391,12 +627,22 @@ class AIImportOrchestrator:
                 "discord_user_id": session.discord_user_id,
                 "source_type": session.source.source_type.value,
                 "parse_method": method.value,
-                "ai_model": self.ai_model,
+                "ai_model": (
+                    self.openai_model
+                    if method is ParseMethod.OPENAI_FALLBACK
+                    else self.ai_model
+                ),
                 "attempt_number": len(session.metadata.attempts),
                 "duration_ms": round((monotonic() - started_at) * 1000),
                 "success": success,
                 "error_code": error_code,
                 "missing_fields_count": len(session.metadata.missing_fields),
                 "estimated_fields_count": len(session.metadata.estimated_fields),
+                "confidence": session.active_result.confidence,
+                "confidence_action": (
+                    session.metadata.confidence_action.value
+                    if session.metadata.confidence_action is not None
+                    else None
+                ),
             },
         )

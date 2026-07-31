@@ -1,9 +1,9 @@
 import json
 from dataclasses import dataclass
 
-from app.ai.client import OllamaClient
 from app.ai.exceptions import AIValidationError
 from app.ai.prompts import build_enrichment_prompt
+from app.ai.protocols import JSONGenerator
 from app.ai.schemas import AIRecipeResult
 from app.models.recipe import Recipe
 from pydantic import BaseModel, Field, ValidationError
@@ -56,7 +56,7 @@ class RecipeEnrichmentService:
     def __init__(
         self,
         *,
-        client: OllamaClient,
+        client: JSONGenerator,
         max_source_characters: int = 50_000,
     ) -> None:
         self.client = client

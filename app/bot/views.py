@@ -49,7 +49,10 @@ class RecipeImportView(discord.ui.View):
         owner_id: int,
         ai_reparse_action: AIAction | None = None,
         ai_enrichment_action: AIAction | None = None,
+        openai_fallback_action: AIAction | None = None,
+        openai_fallback_available: bool = False,
         enrichable_fields: list[str] | None = None,
+        confidence_action: str | None = None,
         confirm_action: ImportAction | None = None,
         cancel_action: CancelAction | None = None,
         ai_generated: bool = False,
@@ -61,7 +64,9 @@ class RecipeImportView(discord.ui.View):
         self.import_action = import_action
         self.ai_reparse_action = ai_reparse_action
         self.ai_enrichment_action = ai_enrichment_action
+        self.openai_fallback_action = openai_fallback_action
         self.enrichable_fields = enrichable_fields or []
+        self.confidence_action = confidence_action
         self.confirm_action = confirm_action or import_action
         self.cancel_action = cancel_action
         self.owner_id = owner_id
@@ -74,6 +79,14 @@ class RecipeImportView(discord.ui.View):
 
         if ai_enrichment_action is None or not self.enrichable_fields:
             self.remove_item(self.ai_enrichment_button)
+        if openai_fallback_action is None or not openai_fallback_available:
+            self.remove_item(self.openai_fallback_button)
+        if confidence_action == "try_local_ai":
+            self.ai_reparse_button.label = "Aanbevolen: controleer met Qwen3.5"
+        elif confidence_action == "retry_local_ai":
+            self.ai_reparse_button.label = "Aanbevolen: Qwen3.5 opnieuw"
+        elif confidence_action == "manual_review":
+            self.save_button.label = "Opslaan na handmatige controle"
 
     async def interaction_check(
         self,
@@ -182,6 +195,7 @@ class RecipeImportView(discord.ui.View):
             result = await self.ai_reparse_action()
         except httpx.HTTPStatusError as exc:
             self._enable_all_buttons()
+            self._reveal_openai_fallback()
             await interaction.edit_original_response(view=self)
             await interaction.followup.send(
                 _http_error_message(
@@ -193,6 +207,7 @@ class RecipeImportView(discord.ui.View):
                 ),
                 ephemeral=NOTICE_EPHEMERAL,
             )
+            await self._send_openai_fallback_notice(interaction)
             return
         except httpx.HTTPError:
             self._enable_all_buttons()
@@ -210,8 +225,15 @@ class RecipeImportView(discord.ui.View):
             owner_id=self.owner_id,
             ai_reparse_action=self.ai_reparse_action,
             ai_enrichment_action=self.ai_enrichment_action,
+            openai_fallback_action=self.openai_fallback_action,
+            openai_fallback_available=result.openai_fallback_available,
             enrichable_fields=(
                 result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
             ),
             confirm_action=self.confirm_action,
             cancel_action=self.cancel_action,
@@ -291,7 +313,14 @@ class RecipeImportView(discord.ui.View):
             owner_id=self.owner_id,
             ai_reparse_action=self.ai_reparse_action,
             ai_enrichment_action=self.ai_enrichment_action,
+            openai_fallback_action=self.openai_fallback_action,
+            openai_fallback_available=result.openai_fallback_available,
             enrichable_fields=remaining_fields,
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
+            ),
             confirm_action=self.confirm_action,
             cancel_action=self.cancel_action,
             ai_generated=True,
@@ -317,6 +346,84 @@ class RecipeImportView(discord.ui.View):
                 "Het recept is inhoudelijk niet gewijzigd."
             )
         await interaction.followup.send(message, ephemeral=NOTICE_EPHEMERAL)
+        self.stop()
+
+    @discord.ui.button(
+        label="Laatste poging met ChatGPT (API)",
+        style=discord.ButtonStyle.danger,
+    )
+    async def openai_fallback_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        if self.openai_fallback_action is None:
+            return
+
+        await interaction.response.defer(thinking=True)
+        self._disable_all_buttons()
+
+        try:
+            result = await self.openai_fallback_action()
+        except httpx.HTTPStatusError as exc:
+            self._enable_all_buttons()
+            await interaction.edit_original_response(view=self)
+            await interaction.followup.send(
+                _http_error_message(
+                    exc,
+                    fallback=(
+                        "ChatGPT kon de oorspronkelijke receptbron niet verwerken. "
+                        "De bestaande preview is niet gewijzigd."
+                    ),
+                ),
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+        except httpx.HTTPError:
+            self._enable_all_buttons()
+            await interaction.edit_original_response(view=self)
+            logger.exception("OpenAI recipe fallback request failed")
+            await interaction.followup.send(
+                (
+                    "De recepten-API is momenteel niet bereikbaar. "
+                    "De bestaande preview is niet gewijzigd."
+                ),
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+
+        replacement = RecipeImportView(
+            api_client=self.api_client,
+            import_action=self.confirm_action,
+            owner_id=self.owner_id,
+            ai_reparse_action=self.ai_reparse_action,
+            ai_enrichment_action=self.ai_enrichment_action,
+            openai_fallback_action=self.openai_fallback_action,
+            openai_fallback_available=result.openai_fallback_available,
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
+            ),
+            confirm_action=self.confirm_action,
+            cancel_action=self.cancel_action,
+            ai_generated=True,
+        )
+        replacement.message = self.message
+        await interaction.edit_original_response(
+            embed=build_recipe_import_embed(result),
+            view=replacement,
+        )
+        await interaction.followup.send(
+            (
+                "ChatGPT heeft de **oorspronkelijke receptbron** verwerkt. "
+                "Controleer de volledige nieuwe preview voordat je opslaat."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
+        )
         self.stop()
 
     @discord.ui.button(
@@ -377,6 +484,29 @@ class RecipeImportView(discord.ui.View):
             if isinstance(child, discord.ui.Button):
                 child.disabled = False
 
+    def _reveal_openai_fallback(self) -> None:
+        if (
+            self.openai_fallback_action is not None
+            and self.openai_fallback_button not in self.children
+        ):
+            self.add_item(self.openai_fallback_button)
+
+    async def _send_openai_fallback_notice(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        if self.openai_fallback_button not in self.children:
+            return
+        await interaction.followup.send(
+            (
+                "Qwen3.5 is geprobeerd en mislukt; de bestaande preview is "
+                "behouden. Als laatste optie kun je **Laatste poging met ChatGPT "
+                "(API)** kiezen. Alleen dan wordt de oorspronkelijke receptbron "
+                "naar OpenAI gestuurd en kunnen API-kosten ontstaan."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
+        )
+
 
 class ImportFailedView(discord.ui.View):
     def __init__(
@@ -385,6 +515,8 @@ class ImportFailedView(discord.ui.View):
         api_client: RecipeApiClient,
         retry_action: AIAction,
         enrichment_action: AIAction,
+        openai_fallback_action: AIAction | None = None,
+        openai_fallback_available: bool = False,
         confirm_action: ImportAction,
         cancel_action: CancelAction,
         owner_id: int,
@@ -394,10 +526,14 @@ class ImportFailedView(discord.ui.View):
         self.api_client = api_client
         self.retry_action = retry_action
         self.enrichment_action = enrichment_action
+        self.openai_fallback_action = openai_fallback_action
         self.confirm_action = confirm_action
         self.cancel_action = cancel_action
         self.owner_id = owner_id
         self.message: discord.InteractionMessage | None = None
+
+        if openai_fallback_action is None or not openai_fallback_available:
+            self.remove_item(self.openai_fallback_button)
 
     async def interaction_check(
         self,
@@ -428,6 +564,7 @@ class ImportFailedView(discord.ui.View):
             result = await self.retry_action()
         except httpx.HTTPStatusError as exc:
             self._set_disabled(False)
+            self._reveal_openai_fallback()
             await interaction.edit_original_response(view=self)
             await interaction.followup.send(
                 _http_error_message(
@@ -439,6 +576,7 @@ class ImportFailedView(discord.ui.View):
                 ),
                 ephemeral=NOTICE_EPHEMERAL,
             )
+            await self._send_openai_fallback_notice(interaction)
             return
         except httpx.HTTPError:
             self._set_disabled(False)
@@ -456,8 +594,15 @@ class ImportFailedView(discord.ui.View):
             owner_id=self.owner_id,
             ai_reparse_action=self.retry_action,
             ai_enrichment_action=self.enrichment_action,
+            openai_fallback_action=self.openai_fallback_action,
+            openai_fallback_available=result.openai_fallback_available,
             enrichable_fields=(
                 result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
             ),
             confirm_action=self.confirm_action,
             cancel_action=self.cancel_action,
@@ -472,6 +617,81 @@ class ImportFailedView(discord.ui.View):
             (
                 "Qwen3.5 heeft een receptpreview gemaakt. Controleer het recept "
                 "en vul ontbrekende metadata desgewenst apart aan."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
+        )
+        self.stop()
+
+    @discord.ui.button(
+        label="Laatste poging met ChatGPT (API)",
+        style=discord.ButtonStyle.danger,
+    )
+    async def openai_fallback_button(
+        self,
+        interaction: discord.Interaction,
+        button: discord.ui.Button,
+    ) -> None:
+        if self.openai_fallback_action is None:
+            return
+
+        await interaction.response.defer(thinking=True)
+        self._set_disabled(True)
+
+        try:
+            result = await self.openai_fallback_action()
+        except httpx.HTTPStatusError as exc:
+            self._set_disabled(False)
+            await interaction.edit_original_response(view=self)
+            await interaction.followup.send(
+                _http_error_message(
+                    exc,
+                    fallback=(
+                        "ChatGPT kon de oorspronkelijke receptbron niet verwerken. "
+                        "Er is nog niets opgeslagen."
+                    ),
+                ),
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+        except httpx.HTTPError:
+            self._set_disabled(False)
+            await interaction.edit_original_response(view=self)
+            logger.exception("OpenAI failed-import fallback request failed")
+            await interaction.followup.send(
+                "De recepten-API is momenteel niet bereikbaar.",
+                ephemeral=NOTICE_EPHEMERAL,
+            )
+            return
+
+        replacement = RecipeImportView(
+            api_client=self.api_client,
+            import_action=self.confirm_action,
+            owner_id=self.owner_id,
+            ai_reparse_action=self.retry_action,
+            ai_enrichment_action=self.enrichment_action,
+            openai_fallback_action=self.openai_fallback_action,
+            openai_fallback_available=result.openai_fallback_available,
+            enrichable_fields=(
+                result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
+            ),
+            confirm_action=self.confirm_action,
+            cancel_action=self.cancel_action,
+            ai_generated=True,
+        )
+        replacement.message = self.message
+        await interaction.edit_original_response(
+            embed=build_recipe_import_embed(result),
+            view=replacement,
+        )
+        await interaction.followup.send(
+            (
+                "ChatGPT heeft de **oorspronkelijke receptbron** verwerkt. "
+                "Controleer de volledige preview voordat je opslaat."
             ),
             ephemeral=NOTICE_EPHEMERAL,
         )
@@ -518,6 +738,29 @@ class ImportFailedView(discord.ui.View):
         for child in self.children:
             if isinstance(child, discord.ui.Button):
                 child.disabled = disabled
+
+    def _reveal_openai_fallback(self) -> None:
+        if (
+            self.openai_fallback_action is not None
+            and self.openai_fallback_button not in self.children
+        ):
+            self.add_item(self.openai_fallback_button)
+
+    async def _send_openai_fallback_notice(
+        self,
+        interaction: discord.Interaction,
+    ) -> None:
+        if self.openai_fallback_button not in self.children:
+            return
+        await interaction.followup.send(
+            (
+                "Qwen3.5 is geprobeerd en mislukt. Als laatste optie kun je "
+                "**Laatste poging met ChatGPT (API)** kiezen. Alleen na die klik "
+                "wordt de oorspronkelijke receptbron naar OpenAI gestuurd en "
+                "kunnen API-kosten ontstaan."
+            ),
+            ephemeral=NOTICE_EPHEMERAL,
+        )
 
 
 class DuplicateRecipeView(discord.ui.View):
@@ -852,6 +1095,12 @@ class DetectedUrlView(discord.ui.View):
                 discord_user_id=self.owner_id,
             )
 
+        async def parse_with_openai() -> RecipeImportResponse:
+            return await self.api_client.parse_import_with_openai(
+                result.import_id,
+                discord_user_id=self.owner_id,
+            )
+
         async def cancel_import() -> None:
             await self.api_client.cancel_import(
                 result.import_id,
@@ -865,6 +1114,10 @@ class DetectedUrlView(discord.ui.View):
                 api_client=self.api_client,
                 retry_action=parse_with_ai,
                 enrichment_action=enrich_metadata_with_ai,
+                openai_fallback_action=(
+                    parse_with_openai if result.openai_enabled else None
+                ),
+                openai_fallback_available=result.openai_fallback_available,
                 confirm_action=confirm_import,
                 cancel_action=cancel_import,
                 owner_id=self.owner_id,
@@ -878,10 +1131,19 @@ class DetectedUrlView(discord.ui.View):
                 ai_enrichment_action=(
                     enrich_metadata_with_ai if result.ai_enabled else None
                 ),
+                openai_fallback_action=(
+                    parse_with_openai if result.openai_enabled else None
+                ),
+                openai_fallback_available=result.openai_fallback_available,
                 enrichable_fields=(
                     result.metadata.enrichable_fields
                     if result.metadata is not None
                     else []
+                ),
+                confidence_action=(
+                    result.metadata.confidence_action
+                    if result.metadata is not None
+                    else None
                 ),
                 confirm_action=confirm_import,
                 cancel_action=cancel_import if result.ai_enabled else None,

@@ -28,6 +28,22 @@ RECIPE_FIELD_LABELS = {
     "tags": "tags",
 }
 
+CONFIDENCE_ACTION_LABELS = {
+    "ready": "Hoog — klaar voor controle",
+    "review_warning": "Redelijk — extra controle aanbevolen",
+    "try_local_ai": "Laag — controle met Qwen3.5 aanbevolen",
+    "retry_local_ai": "Onzeker — probeer Qwen3.5 nog één keer",
+    "offer_openai": "Zeer onzeker — ChatGPT is als laatste optie beschikbaar",
+    "manual_review": "Onzeker na AI — handmatige controle vereist",
+}
+
+CONFIDENCE_REASON_LABELS = {
+    "recipe_missing": "geen compleet recept herkend",
+    "ingredient_quantities_missing": "ingrediënthoeveelheden ontbreken",
+    "parser_warnings": "de parser gaf waarschuwingen",
+    "estimated_fields": "velden zijn door AI geschat",
+}
+
 
 def _truncate(value: str, limit: int) -> str:
     if len(value) <= limit:
@@ -73,6 +89,18 @@ def build_recipe_import_embed(
                     inline=False,
                 )
 
+        if result.openai_fallback_available:
+            embed.add_field(
+                name="Laatste externe optie",
+                value=(
+                    "Qwen3.5 is al geprobeerd. Met **Laatste poging met "
+                    "ChatGPT (API)** wordt de oorspronkelijke receptbron naar "
+                    "OpenAI gestuurd. Dit gebeurt alleen als je op de knop klikt "
+                    "en kan API-kosten veroorzaken."
+                ),
+                inline=False,
+            )
+
         return embed
 
     recipe = result.recipe
@@ -90,6 +118,42 @@ def build_recipe_import_embed(
         if result.metadata.ai_model is not None:
             parser_label = result.metadata.ai_model
         embed.description = f"{embed.description}\nVerwerkt met: **{parser_label}**"
+
+    if result.confidence is not None:
+        action = (
+            result.metadata.confidence_action if result.metadata is not None else None
+        )
+        confidence_text = CONFIDENCE_ACTION_LABELS.get(
+            action or "",
+            "Controleer de preview",
+        )
+        confidence_value = f"**{round(result.confidence * 100)}%** — {confidence_text}"
+        reasons = (
+            result.metadata.confidence_reasons if result.metadata is not None else []
+        )
+        if reasons:
+            readable_reasons = [
+                CONFIDENCE_REASON_LABELS.get(
+                    reason,
+                    (
+                        (
+                            f"{recipe_field_label(reason.removeprefix('missing:'))} "
+                            "ontbreekt"
+                        )
+                        if reason.startswith("missing:")
+                        else _truncate(reason, 120)
+                    ),
+                )
+                for reason in reasons[:5]
+            ]
+            confidence_value += "\n" + "\n".join(
+                f"• {reason}" for reason in readable_reasons
+            )
+        embed.add_field(
+            name="Betrouwbaarheid van de parse",
+            value=confidence_value[:1024],
+            inline=False,
+        )
 
     if recipe.servings is not None:
         embed.add_field(
@@ -179,6 +243,22 @@ def build_recipe_import_embed(
                 f"• {recipe_field_label(field_name)}"
                 for field_name in result.metadata.unsafe_to_guess_fields
             )[:1024],
+            inline=False,
+        )
+
+    if result.openai_fallback_available:
+        local_outcome = (
+            "Qwen3.5 gaf een resultaat met onvoldoende confidence."
+            if result.recipe is not None
+            else "Qwen3.5 kon geen geldig recept maken."
+        )
+        embed.add_field(
+            name="Laatste externe optie",
+            value=(
+                f"{local_outcome} Met **Laatste poging met ChatGPT (API)** wordt "
+                "de oorspronkelijke receptbron naar OpenAI gestuurd. Dit gebeurt "
+                "alleen na je klik en kan API-kosten veroorzaken."
+            ),
             inline=False,
         )
 

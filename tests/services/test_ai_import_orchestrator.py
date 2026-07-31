@@ -2,11 +2,12 @@ import asyncio
 from unittest.mock import AsyncMock
 
 import pytest
-from app.ai.exceptions import AIUnavailableError
+from app.ai.exceptions import AIFallbackNotAllowedError, AIUnavailableError
 from app.importers.ai_recipe import AIRecipeImport
 from app.models.import_result import ImportResult, ImportStatus
 from app.models.import_session import (
     AIParseReason,
+    ConfidenceAction,
     ImportProcessingStatus,
     ImportSource,
     ParseMethod,
@@ -82,6 +83,41 @@ def test_ai_reparse_replaces_preview_only_after_success() -> None:
     assert session.metadata.attempts[-1].success is True
 
 
+def test_low_confidence_local_result_unlocks_openai_fallback() -> None:
+    repository = ImportSessionRepository()
+    importer = AsyncMock()
+    importer.import_text.return_value = AIRecipeImport(
+        recipe=_recipe("Uncertain soup"),
+        extracted_fields=["title", "ingredients", "instructions"],
+        estimated_fields=[],
+        warnings=[],
+        confidence=0.40,
+        confidence_reasons=["The source image was hard to read."],
+    )
+    orchestrator = _orchestrator(importer=importer, repository=repository)
+    normal_result = ImportResult(status=ImportStatus.SUCCESS, recipe=_recipe())
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+
+    session = asyncio.run(
+        orchestrator.parse_with_ai(
+            normal_result.import_id,
+            reason=AIParseReason.USER_REQUESTED_REPARSE,
+        )
+    )
+
+    assert session.active_result.confidence == 0.40
+    assert session.active_result.status is ImportStatus.PARTIAL
+    assert session.metadata.confidence_action is ConfidenceAction.OFFER_OPENAI
+    assert AIImportOrchestrator.is_openai_fallback_allowed(session) is True
+    assert session.metadata.confidence_reasons == ["The source image was hard to read."]
+
+
 def test_failed_ai_reparse_preserves_normal_candidate() -> None:
     repository = ImportSessionRepository()
     importer = AsyncMock()
@@ -95,7 +131,6 @@ def test_failed_ai_reparse_preserves_normal_candidate() -> None:
             raw_text="Original source",
         ),
     )
-
     with pytest.raises(AIUnavailableError):
         asyncio.run(
             orchestrator.parse_with_ai(
@@ -109,6 +144,83 @@ def test_failed_ai_reparse_preserves_normal_candidate() -> None:
     assert session.active_result.recipe.title == "Normal soup"
     assert session.status is ImportProcessingStatus.AI_PARSE_FAILED
     assert session.metadata.attempts[-1].success is False
+
+
+def test_openai_fallback_is_rejected_before_local_failure() -> None:
+    repository = ImportSessionRepository()
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=AsyncMock(),
+        enrichment_service=AsyncMock(),
+        source_loader=AsyncMock(),
+        ai_model="qwen3.5:4b",
+        openai_importer=AsyncMock(),
+        openai_model="gpt-5-nano",
+    )
+    normal_result = ImportResult(status=ImportStatus.SUCCESS, recipe=_recipe())
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+
+    with pytest.raises(AIFallbackNotAllowedError):
+        asyncio.run(orchestrator.parse_with_openai(normal_result.import_id))
+
+
+def test_openai_fallback_uses_original_source_after_local_failure() -> None:
+    repository = ImportSessionRepository()
+    local_importer = AsyncMock()
+    local_importer.import_text.side_effect = AIUnavailableError("offline")
+    openai_importer = AsyncMock()
+    openai_importer.import_text.return_value = AIRecipeImport(
+        recipe=_recipe("ChatGPT soup").model_copy(
+            update={"extractor": "openai:gpt-5-nano"}
+        ),
+        extracted_fields=["title", "ingredients", "instructions"],
+        estimated_fields=[],
+        warnings=[],
+    )
+    loader = AsyncMock()
+    loader.load_text.return_value = "Original source"
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=local_importer,
+        enrichment_service=AsyncMock(),
+        source_loader=loader,
+        ai_model="qwen3.5:4b",
+        openai_importer=openai_importer,
+        openai_model="gpt-5-nano",
+    )
+    normal_result = ImportResult(status=ImportStatus.SUCCESS, recipe=_recipe())
+    orchestrator.register_normal_result(
+        result=normal_result,
+        source=ImportSource(
+            source_type=SourceType.MANUAL,
+            raw_text="Original source",
+        ),
+    )
+    with pytest.raises(AIUnavailableError):
+        asyncio.run(
+            orchestrator.parse_with_ai(
+                normal_result.import_id,
+                reason=AIParseReason.USER_REQUESTED_REPARSE,
+            )
+        )
+
+    session = asyncio.run(orchestrator.parse_with_openai(normal_result.import_id))
+
+    openai_importer.import_text.assert_awaited_once()
+    assert openai_importer.import_text.await_args.args[0] == "Original source"
+    assert session.active_result.recipe.title == "ChatGPT soup"
+    assert session.active_result.recipe.extractor == "openai:gpt-5-nano"
+    assert session.previous_results[-1].recipe.title == "Normal soup"
+    assert session.metadata.parse_method is ParseMethod.OPENAI_FALLBACK
+    assert session.metadata.ai_model == "gpt-5-nano"
+    assert session.metadata.attempts[-2].success is False
+    assert session.metadata.attempts[-1].success is True
 
 
 def test_failed_normal_parse_can_be_retried_with_same_source() -> None:
@@ -224,6 +336,9 @@ def test_manual_enrichment_failure_preserves_current_preview() -> None:
             raw_text="Original source",
         ),
     )
+    warnings_before_enrichment = repository.get(
+        normal_result.import_id
+    ).active_result.warnings
 
     with pytest.raises(AIUnavailableError):
         asyncio.run(orchestrator.enrich_missing_metadata(normal_result.import_id))
@@ -231,7 +346,7 @@ def test_manual_enrichment_failure_preserves_current_preview() -> None:
     session = repository.get(normal_result.import_id)
     assert session.active_result.recipe.title == "Normal soup"
     assert session.active_result.recipe.servings is None
-    assert session.active_result.warnings == []
+    assert session.active_result.warnings == warnings_before_enrichment
     assert session.status is ImportProcessingStatus.AWAITING_CONFIRMATION
     assert session.metadata.attempts[-1].success is False
 

@@ -3,7 +3,7 @@ from contextlib import contextmanager
 from pathlib import Path
 from tempfile import TemporaryDirectory
 from typing import Annotated
-from uuid import UUID, uuid4
+from uuid import uuid4
 
 from fastapi import APIRouter, Depends, File, HTTPException, UploadFile, status
 
@@ -97,22 +97,36 @@ def _import_uploaded_recipe(
         return importer.import_recipe(source)
 
 
-def _raise_for_failed_import(result: ImportResult) -> None:
+def _raise_for_failed_import(
+    result: ImportResult,
+    *,
+    session: ImportSession | None = None,
+) -> None:
     if result.status is not ImportStatus.FAILED:
         return
 
+    detail: dict[str, object] = {
+        "import_id": str(result.import_id),
+        "warnings": [warning.model_dump() for warning in result.warnings],
+    }
+    if session is not None:
+        detail.update(
+            {
+                "metadata": session.metadata.model_dump(mode="json"),
+                "openai_enabled": get_settings().openai_configured,
+                "openai_fallback_available": False,
+            }
+        )
+
     raise HTTPException(
         status_code=status.HTTP_422_UNPROCESSABLE_CONTENT,
-        detail={
-            "import_id": str(result.import_id),
-            "warnings": [warning.model_dump() for warning in result.warnings],
-        },
+        detail=detail,
     )
 
 
 def _register_upload_session(
     *,
-    repository: ImportSessionRepository,
+    orchestrator: AIImportOrchestrator,
     result: ImportResult,
     extension: str,
     text: str,
@@ -120,7 +134,7 @@ def _register_upload_session(
     content_type: str | None,
 ) -> ImportSession:
     source_type = SourceType.MARKDOWN if extension == ".md" else SourceType.MANUAL
-    return repository.register(
+    return orchestrator.register_normal_result(
         result=result,
         source=ImportSource(
             source_type=source_type,
@@ -182,7 +196,7 @@ async def preview_uploaded_recipe(
         filename=filename,
     )
     session = _register_upload_session(
-        repository=repository,
+        orchestrator=orchestrator,
         result=result,
         extension=extension,
         text=text,
@@ -190,7 +204,7 @@ async def preview_uploaded_recipe(
         content_type=file.content_type,
     )
 
-    _raise_for_failed_import(result)
+    _raise_for_failed_import(result, session=session)
 
     return WebsiteImportResponse(
         import_id=result.import_id,
@@ -199,8 +213,14 @@ async def preview_uploaded_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
         metadata=session.metadata,
         ai_enabled=get_settings().ai_enabled,
+        openai_enabled=get_settings().openai_configured,
+        openai_fallback_available=(
+            get_settings().openai_configured
+            and AIImportOrchestrator.is_openai_fallback_allowed(session)
+        ),
     )
 
 
@@ -262,7 +282,12 @@ async def _preview_image_recipe(
             reason=AIParseReason.IMAGE_INPUT,
         )
     except AIServiceError as exc:
-        _raise_image_ai_error(exc, import_id=import_id)
+        failed_session = repository.get(import_id)
+        _raise_image_ai_error(
+            exc,
+            session=failed_session,
+            openai_enabled=settings.openai_configured,
+        )
 
     result = session.active_result
     return WebsiteImportResponse(
@@ -272,18 +297,32 @@ async def _preview_image_recipe(
         destination=None,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
         metadata=session.metadata,
         ai_enabled=True,
+        openai_enabled=settings.openai_configured,
+        openai_fallback_available=(
+            settings.openai_configured
+            and AIImportOrchestrator.is_openai_fallback_allowed(session)
+        ),
     )
 
 
-def _raise_image_ai_error(exc: AIServiceError, *, import_id: UUID) -> None:
-    detail: dict[str, str] = {
-        "import_id": str(import_id),
+def _raise_image_ai_error(
+    exc: AIServiceError,
+    *,
+    session: ImportSession,
+    openai_enabled: bool,
+) -> None:
+    detail: dict[str, object] = {
+        "import_id": str(session.import_id),
         "message": (
             "Qwen3.5 is momenteel niet bereikbaar. Controleer of de "
             "Ollama-container actief is."
         ),
+        "metadata": session.metadata.model_dump(mode="json"),
+        "openai_enabled": openai_enabled,
+        "openai_fallback_available": openai_enabled,
     }
     status_code = status.HTTP_503_SERVICE_UNAVAILABLE
 
@@ -366,4 +405,5 @@ async def import_uploaded_recipe(
         destination=destination,
         recipe=build_recipe_preview(result),
         warnings=result.warnings,
+        confidence=result.confidence,
     )

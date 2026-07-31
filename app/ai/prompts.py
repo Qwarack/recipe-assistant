@@ -19,6 +19,7 @@ def build_full_recipe_extraction_prompt(
     source_text: str | None,
     image_input: bool,
     max_source_characters: int,
+    include_schema: bool = True,
 ) -> str:
     source = (source_text or "")[:max_source_characters]
     input_instruction = (
@@ -26,10 +27,15 @@ def build_full_recipe_extraction_prompt(
         if image_input
         else "Extract the recipe from SOURCE below."
     )
-    schema = json.dumps(
-        AIRecipeResult.model_json_schema(),
-        ensure_ascii=False,
-        separators=(",", ":"),
+    schema_instruction = (
+        "Use exactly this JSON schema:\n"
+        + json.dumps(
+            AIRecipeResult.model_json_schema(),
+            ensure_ascii=False,
+            separators=(",", ":"),
+        )
+        if include_schema
+        else "Return the recipe through the provided structured-output contract."
     )
 
     return f"""
@@ -43,10 +49,12 @@ Split ingredients into name, quantity, unit, preparation and optional.
 When a value is absent, leave it null or empty.
 Only estimate safe metadata when context is sufficient, record every estimate in
 estimated_fields, and add a concise warning when uncertain.
+Set confidence between 0 and 1 for the reliability of the complete extraction.
+Lower it for unclear OCR, ambiguous sections, missing recipe content or uncertain
+field attribution. Briefly record those causes in confidence_reasons.
 {_SAFETY_RULES}
 
-Use exactly this JSON schema:
-{schema}
+{schema_instruction}
 
 SOURCE:
 {source}

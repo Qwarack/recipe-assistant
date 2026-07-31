@@ -10,6 +10,7 @@ from app.models.recipe import SourceType
 def test_ai_importer_maps_valid_json_to_recipe() -> None:
     client = AsyncMock()
     client.model = "qwen3.5:4b"
+    client.provider = "ollama"
     client.generate_json.return_value = {
         "title": "Tomatensoep",
         "servings": 4,
@@ -26,6 +27,8 @@ def test_ai_importer_maps_valid_json_to_recipe() -> None:
         "tags": ["soep"],
         "estimated_fields": ["servings"],
         "warnings": ["Porties zijn geschat."],
+        "confidence": 0.72,
+        "confidence_reasons": ["Porties ontbreken in de bron."],
     }
     importer = AIRecipeImporter(client=client)
 
@@ -42,6 +45,32 @@ def test_ai_importer_maps_valid_json_to_recipe() -> None:
     assert result.recipe.tags == ["nederlands", "soep", "vegetarian"]
     assert result.estimated_fields == ["servings"]
     assert "servings" not in result.extracted_fields
+    assert result.confidence == 0.72
+    assert result.confidence_reasons == ["Porties ontbreken in de bron."]
+
+
+def test_structured_output_client_does_not_duplicate_schema_in_prompt() -> None:
+    client = AsyncMock()
+    client.model = "gpt-5-nano"
+    client.provider = "openai"
+    client.uses_structured_outputs = True
+    client.generate_json.return_value = {
+        "title": "Soep",
+        "ingredients": [{"name": "water"}],
+        "instructions": ["Meng."],
+    }
+    importer = AIRecipeImporter(client=client)
+
+    asyncio.run(
+        importer.import_text(
+            "Soep met water",
+            context=AIRecipeContext(source_type=SourceType.MANUAL),
+        )
+    )
+
+    prompt = client.generate_json.await_args.kwargs["prompt"]
+    assert "provided structured-output contract" in prompt
+    assert '"properties"' not in prompt
 
 
 def test_ai_importer_rejects_missing_required_recipe_fields() -> None:

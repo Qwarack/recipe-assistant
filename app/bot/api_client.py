@@ -1,4 +1,4 @@
-from dataclasses import dataclass
+from dataclasses import dataclass, field
 from datetime import date
 from typing import Any
 
@@ -28,6 +28,8 @@ class RecipeImportMetadata:
     enrichable_fields: list[str]
     unsafe_to_guess_fields: list[str]
     warnings: list[str]
+    confidence_action: str | None = None
+    confidence_reasons: list[str] = field(default_factory=list)
 
 
 @dataclass(slots=True)
@@ -37,8 +39,11 @@ class RecipeImportResponse:
     destination: str | None
     recipe: RecipePreview | None
     warnings: list[dict[str, Any]]
+    confidence: float | None = None
     metadata: RecipeImportMetadata | None = None
     ai_enabled: bool = False
+    openai_enabled: bool = False
+    openai_fallback_available: bool = False
 
 
 @dataclass(slots=True)
@@ -140,6 +145,8 @@ def _parse_import_response(
                 [],
             ),
             warnings=metadata_payload.get("warnings", []),
+            confidence_action=metadata_payload.get("confidence_action"),
+            confidence_reasons=metadata_payload.get("confidence_reasons", []),
         )
 
     return RecipeImportResponse(
@@ -148,8 +155,14 @@ def _parse_import_response(
         destination=payload.get("destination"),
         recipe=recipe,
         warnings=payload.get("warnings", []),
+        confidence=payload.get("confidence"),
         metadata=metadata,
         ai_enabled=payload.get("ai_enabled", False),
+        openai_enabled=payload.get("openai_enabled", False),
+        openai_fallback_available=payload.get(
+            "openai_fallback_available",
+            False,
+        ),
     )
 
 
@@ -177,6 +190,11 @@ def _parse_preview_response(response: httpx.Response) -> RecipeImportResponse:
                 "warnings": warnings,
                 "metadata": detail.get("metadata"),
                 "ai_enabled": True,
+                "openai_enabled": detail.get("openai_enabled", False),
+                "openai_fallback_available": detail.get(
+                    "openai_fallback_available",
+                    False,
+                ),
             }
         )
 
@@ -458,6 +476,26 @@ class RecipeApiClient:
         discord_user_id: int,
     ) -> RecipeImportResponse:
         endpoint = f"{self.base_url}/imports/{import_id}/enrich-ai"
+
+        async with httpx.AsyncClient(
+            timeout=max(self.timeout_seconds, 130.0),
+            transport=self.transport,
+        ) as client:
+            response = await client.post(
+                endpoint,
+                json={"discord_user_id": discord_user_id},
+            )
+
+        response.raise_for_status()
+        return _parse_import_response(response.json())
+
+    async def parse_import_with_openai(
+        self,
+        import_id: str,
+        *,
+        discord_user_id: int,
+    ) -> RecipeImportResponse:
+        endpoint = f"{self.base_url}/imports/{import_id}/parse-openai"
 
         async with httpx.AsyncClient(
             timeout=max(self.timeout_seconds, 130.0),

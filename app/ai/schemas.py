@@ -55,6 +55,8 @@ class AIRecipeResult(BaseModel):
     difficulty: str | None = Field(default=None, max_length=50)
     warnings: list[str] = Field(default_factory=list)
     estimated_fields: list[str] = Field(default_factory=list)
+    confidence: float | None = Field(default=None, ge=0, le=1)
+    confidence_reasons: list[str] = Field(default_factory=list)
 
     @field_validator("title", "description", "difficulty", mode="before")
     @classmethod
@@ -71,6 +73,7 @@ class AIRecipeResult(BaseModel):
         "dietary",
         "tags",
         "warnings",
+        "confidence_reasons",
         mode="before",
     )
     @classmethod

@@ -76,6 +76,48 @@ def test_embed_includes_warnings() -> None:
     assert "similar recipe" in warning_field.value
 
 
+def test_embed_explains_confidence_and_recommended_action() -> None:
+    result = RecipeImportResponse(
+        import_id="abc123",
+        status="partial",
+        destination=None,
+        recipe=RecipePreview(
+            title="Soep",
+            servings=None,
+            prep_time_minutes=None,
+            cook_time_minutes=None,
+            total_time_minutes=None,
+            ingredient_count=2,
+            instruction_count=3,
+            source_url=None,
+        ),
+        warnings=[],
+        confidence=0.70,
+        metadata=RecipeImportMetadata(
+            parse_method="ai_reparse",
+            parser_name="ollama:qwen3.5:4b",
+            ai_model="qwen3.5:4b",
+            extracted_fields=[],
+            estimated_fields=[],
+            missing_fields=["tags"],
+            enrichable_fields=["tags"],
+            unsafe_to_guess_fields=[],
+            warnings=[],
+            confidence_action="retry_local_ai",
+            confidence_reasons=["missing:tags"],
+        ),
+    )
+
+    embed = build_recipe_import_embed(result)
+
+    confidence_field = next(
+        field for field in embed.fields if field.name == "Betrouwbaarheid van de parse"
+    )
+    assert "70%" in confidence_field.value
+    assert "Qwen3.5 nog één keer" in confidence_field.value
+    assert "tags ontbreekt" in confidence_field.value
+
+
 def test_embed_explains_optional_metadata_enrichment() -> None:
     result = RecipeImportResponse(
         import_id="abc123",
@@ -122,6 +164,27 @@ def test_embed_explains_optional_metadata_enrichment() -> None:
     assert "maaltijdtype" in metadata_field.value
     assert "Bestaande gegevens worden niet overschreven" in metadata_field.value
     assert "hoeveelheid van ingrediënt 1" in unsafe_field.value
+
+
+def test_failed_embed_explains_external_openai_cost_and_consent() -> None:
+    result = RecipeImportResponse(
+        import_id="abc123",
+        status="failed",
+        destination=None,
+        recipe=None,
+        warnings=[],
+        openai_enabled=True,
+        openai_fallback_available=True,
+    )
+
+    embed = build_recipe_import_embed(result)
+
+    fallback_field = next(
+        field for field in embed.fields if field.name == "Laatste externe optie"
+    )
+    assert "oorspronkelijke receptbron" in fallback_field.value
+    assert "alleen als je op de knop klikt" in fallback_field.value
+    assert "API-kosten" in fallback_field.value
 
 
 def test_builds_recipe_detail_embed() -> None:

@@ -99,6 +99,12 @@ class ManualRecipeModal(
                 discord_user_id=self.owner_id,
             )
 
+        async def parse_with_openai() -> RecipeImportResponse:
+            return await self.api_client.parse_import_with_openai(
+                result.import_id,
+                discord_user_id=self.owner_id,
+            )
+
         async def cancel_import() -> None:
             await self.api_client.cancel_import(
                 result.import_id,
@@ -117,6 +123,10 @@ class ManualRecipeModal(
                 api_client=self.api_client,
                 retry_action=parse_with_ai,
                 enrichment_action=enrich_metadata_with_ai,
+                openai_fallback_action=(
+                    parse_with_openai if result.openai_enabled else None
+                ),
+                openai_fallback_available=result.openai_fallback_available,
                 confirm_action=confirm_import,
                 cancel_action=cancel_import,
                 owner_id=self.owner_id,
@@ -138,8 +148,17 @@ class ManualRecipeModal(
             ai_enrichment_action=(
                 enrich_metadata_with_ai if result.ai_enabled else None
             ),
+            openai_fallback_action=(
+                parse_with_openai if result.openai_enabled else None
+            ),
+            openai_fallback_available=result.openai_fallback_available,
             enrichable_fields=(
                 result.metadata.enrichable_fields if result.metadata is not None else []
+            ),
+            confidence_action=(
+                result.metadata.confidence_action
+                if result.metadata is not None
+                else None
             ),
             confirm_action=confirm_import,
             cancel_action=cancel_import if result.ai_enabled else None,

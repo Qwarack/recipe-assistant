@@ -1,4 +1,5 @@
 from pathlib import Path
+from types import SimpleNamespace
 from unittest.mock import AsyncMock
 
 from app.api import ai_imports as ai_imports_api
@@ -103,6 +104,50 @@ def test_enrich_ai_endpoint_returns_metadata_only_preview() -> None:
     assert response.json()["metadata"]["parse_method"] == "ai_enrichment"
     assert response.json()["metadata"]["estimated_fields"] == ["tags"]
     orchestrator.enrich_missing_metadata.assert_awaited_once_with(
+        session.import_id,
+        discord_user_id=123,
+    )
+
+
+def test_openai_endpoint_is_explicit_final_fallback(monkeypatch) -> None:
+    repository = ImportSessionRepository()
+    session = _registered_session(repository)
+    session.active_result = ImportResult(
+        import_id=session.import_id,
+        created_at=session.created_at,
+        status=ImportStatus.SUCCESS,
+        recipe=_recipe("ChatGPT soup"),
+    )
+    session.status = ImportProcessingStatus.AWAITING_CONFIRMATION
+    session.metadata.parse_method = ParseMethod.OPENAI_FALLBACK
+    session.metadata.ai_model = "gpt-5-nano"
+    repository.update(session)
+    orchestrator = AsyncMock()
+    orchestrator.parse_with_openai.return_value = session
+    monkeypatch.setattr(
+        ai_imports_api,
+        "get_settings",
+        lambda: SimpleNamespace(
+            ai_enabled=True,
+            openai_configured=True,
+        ),
+    )
+    app.dependency_overrides[create_ai_import_orchestrator] = lambda: orchestrator
+
+    try:
+        with TestClient(app) as client:
+            response = client.post(
+                f"/imports/{session.import_id}/parse-openai",
+                json={"discord_user_id": 123},
+            )
+    finally:
+        app.dependency_overrides.clear()
+
+    assert response.status_code == 200
+    assert response.json()["recipe"]["title"] == "ChatGPT soup"
+    assert response.json()["metadata"]["parse_method"] == "openai_fallback"
+    assert response.json()["openai_fallback_available"] is False
+    orchestrator.parse_with_openai.assert_awaited_once_with(
         session.import_id,
         discord_user_id=123,
     )

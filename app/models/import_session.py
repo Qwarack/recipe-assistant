@@ -15,6 +15,7 @@ class ParseMethod(StrEnum):
     AI_IMAGE = "ai_image"
     AI_REPARSE = "ai_reparse"
     AI_ENRICHMENT = "ai_enrichment"
+    OPENAI_FALLBACK = "openai_fallback"
 
 
 class ValueOrigin(StrEnum):
@@ -37,9 +38,19 @@ class ImportProcessingStatus(StrEnum):
     NORMAL_PARSE_FAILED = "normal_parse_failed"
     PROCESSING_AI = "processing_ai"
     AI_PARSE_FAILED = "ai_parse_failed"
+    OPENAI_PARSE_FAILED = "openai_parse_failed"
     AWAITING_CONFIRMATION = "awaiting_confirmation"
     SAVED = "saved"
     CANCELLED = "cancelled"
+
+
+class ConfidenceAction(StrEnum):
+    READY = "ready"
+    REVIEW_WARNING = "review_warning"
+    TRY_LOCAL_AI = "try_local_ai"
+    RETRY_LOCAL_AI = "retry_local_ai"
+    OFFER_OPENAI = "offer_openai"
+    MANUAL_REVIEW = "manual_review"
 
 
 class ImportSource(BaseModel):
@@ -84,6 +95,8 @@ class RecipeImportMetadata(BaseModel):
     enrichable_fields: list[str] = Field(default_factory=list)
     unsafe_to_guess_fields: list[str] = Field(default_factory=list)
     warnings: list[str] = Field(default_factory=list)
+    confidence_action: ConfidenceAction | None = None
+    confidence_reasons: list[str] = Field(default_factory=list)
     normal_parser_error: str | None = None
     attempts: list[ParseAttempt] = Field(default_factory=list)
 

@@ -64,6 +64,44 @@ def test_recipe_import_view_shows_ai_reparse_when_configured() -> None:
     ]
 
 
+def test_confidence_action_makes_recommended_next_step_explicit() -> None:
+    view = RecipeImportView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        import_action=unexpected_import,
+        ai_reparse_action=AsyncMock(),
+        confidence_action="retry_local_ai",
+        owner_id=123,
+    )
+
+    labels = [
+        child.label for child in view.children if isinstance(child, discord.ui.Button)
+    ]
+
+    assert labels == [
+        "Opslaan",
+        "Aanbevolen: Qwen3.5 opnieuw",
+        "Annuleren",
+    ]
+
+
+def test_manual_review_action_changes_save_label() -> None:
+    view = RecipeImportView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        import_action=unexpected_import,
+        confidence_action="manual_review",
+        owner_id=123,
+    )
+
+    labels = [
+        child.label for child in view.children if isinstance(child, discord.ui.Button)
+    ]
+
+    assert labels == [
+        "Opslaan na handmatige controle",
+        "Annuleren",
+    ]
+
+
 def test_recipe_import_view_only_shows_metadata_action_for_missing_metadata() -> None:
     view = RecipeImportView(
         api_client=RecipeApiClient(base_url="http://example.test"),
@@ -100,6 +138,51 @@ def test_failed_import_view_contains_retry_and_cancel() -> None:
         "Recept herstellen met AI",
         "Annuleren",
     ]
+
+
+def test_openai_fallback_button_only_appears_after_local_failure() -> None:
+    openai_action = AsyncMock()
+    view = RecipeImportView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        import_action=unexpected_import,
+        ai_reparse_action=AsyncMock(),
+        openai_fallback_action=openai_action,
+        openai_fallback_available=False,
+        owner_id=123,
+    )
+
+    labels_before_failure = [
+        child.label for child in view.children if isinstance(child, discord.ui.Button)
+    ]
+    view._reveal_openai_fallback()
+    labels_after_failure = [
+        child.label for child in view.children if isinstance(child, discord.ui.Button)
+    ]
+
+    assert "Laatste poging met ChatGPT (API)" not in labels_before_failure
+    assert "Laatste poging met ChatGPT (API)" in labels_after_failure
+
+
+def test_failed_view_can_show_openai_as_explicit_final_option() -> None:
+    view = ImportFailedView(
+        api_client=RecipeApiClient(base_url="http://example.test"),
+        retry_action=AsyncMock(),
+        enrichment_action=AsyncMock(),
+        openai_fallback_action=AsyncMock(),
+        openai_fallback_available=True,
+        confirm_action=AsyncMock(),
+        cancel_action=AsyncMock(),
+        owner_id=123,
+    )
+
+    buttons = [child for child in view.children if isinstance(child, discord.ui.Button)]
+
+    assert [button.label for button in buttons] == [
+        "Recept herstellen met AI",
+        "Laatste poging met ChatGPT (API)",
+        "Annuleren",
+    ]
+    assert buttons[1].style is discord.ButtonStyle.danger
 
 
 def test_save_button_edits_ephemeral_interaction_response() -> None:

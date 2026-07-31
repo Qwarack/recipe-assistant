@@ -20,6 +20,9 @@ _ollama_request_semaphore = asyncio.Semaphore(1)
 
 
 class OllamaClient:
+    provider = "ollama"
+    uses_structured_outputs = False
+
     def __init__(
         self,
         *,
