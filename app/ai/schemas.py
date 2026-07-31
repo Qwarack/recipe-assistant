@@ -1,5 +1,5 @@
 from decimal import Decimal
-from typing import Literal
+from typing import Literal, get_args
 
 from pydantic import BaseModel, ConfigDict, Field, field_validator
 
@@ -27,6 +27,9 @@ AIRecipeFieldName = Literal[
     "tags",
     "difficulty",
 ]
+
+AI_RECIPE_MEAL_TYPES = frozenset(get_args(AIRecipeMealType))
+AI_RECIPE_FIELD_NAMES = frozenset(get_args(AIRecipeFieldName))
 
 
 class AIIngredient(BaseModel):

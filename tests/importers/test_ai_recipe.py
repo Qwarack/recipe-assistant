@@ -122,6 +122,157 @@ def test_ai_importer_rejects_missing_required_recipe_fields() -> None:
         )
 
 
+def test_ai_importer_keeps_recipe_with_invalid_estimated_field() -> None:
+    client = AsyncMock()
+    client.model = "gpt-5-nano"
+    client.provider = "openai"
+    client.uses_structured_outputs = True
+    client.generate_json.return_value = {
+        "title": "ROMEINS PIZZADEEG",
+        "description": None,
+        "servings": None,
+        "prep_time_minutes": 15,
+        "cook_time_minutes": None,
+        "total_time_minutes": None,
+        "ingredients": [
+            {"name": "bloem", "quantity": 550, "unit": "g"},
+            {"name": "gist", "quantity": 10, "unit": "g"},
+            {"name": "water", "quantity": 360, "unit": "ml"},
+            {"name": "zout", "quantity": 12, "unit": "g"},
+            {"name": "olijfolie", "quantity": 2, "unit": "el"},
+        ],
+        "instructions": [
+            "Meng de bloem met de gist en het water.",
+            "Voeg zout en olijfolie toe en kneed het deeg.",
+            "Laat het deeg rijzen.",
+        ],
+        "cuisine": ["Dutch"],
+        "meal_types": ["dinner"],
+        "dietary": [],
+        "tags": ["pizza", "dough"],
+        "difficulty": None,
+        "warnings": ["De bron bevat mogelijk onduidelijke tekst."],
+        "estimated_fields": [
+            "title",
+            "ingredients",
+            "instructions",
+            "prep_time_minutes",
+            "meal_types",
+            "warnings",
+        ],
+        "confidence": 0.42,
+        "confidence_reasons": ["De OCR was niet overal duidelijk."],
+    }
+    importer = AIRecipeImporter(client=client)
+
+    result = asyncio.run(
+        importer.import_image(
+            b"image",
+            context=AIRecipeContext(source_type=SourceType.IMAGE),
+        )
+    )
+
+    assert result.recipe.title == "ROMEINS PIZZADEEG"
+    assert len(result.recipe.ingredients) == 5
+    assert len(result.recipe.instructions) == 3
+    assert "warnings" not in result.estimated_fields
+    assert result.confidence == 0.42
+    assert any("bruikbare recept is behouden" in warning for warning in result.warnings)
+    assert any(
+        "automatisch gecorrigeerd" in reason for reason in result.confidence_reasons
+    )
+
+
+def test_ai_importer_repairs_invalid_optional_metadata_but_requires_review() -> None:
+    client = AsyncMock()
+    client.model = "qwen3.5:4b"
+    client.provider = "ollama"
+    client.uses_structured_outputs = False
+    client.generate_json.return_value = {
+        "title": "Langzaam deeg",
+        "servings": 0,
+        "ingredients": {"name": "bloem", "quantity": 550, "unit": "g"},
+        "instructions": "Meng en kneed het deeg.",
+        "meal_types": ["dinner", "supper"],
+        "difficulty": "unknown",
+        "confidence": 1.5,
+        "estimated_fields": "meal_types",
+        "unexpected_note": "ignore me",
+    }
+    importer = AIRecipeImporter(client=client)
+
+    result = asyncio.run(
+        importer.import_text(
+            "Langzaam deeg",
+            context=AIRecipeContext(source_type=SourceType.MANUAL),
+        )
+    )
+
+    assert result.recipe.title == "Langzaam deeg"
+    assert [ingredient.name for ingredient in result.recipe.ingredients] == ["bloem"]
+    assert result.recipe.instructions == ["Meng en kneed het deeg."]
+    assert result.recipe.servings is None
+    assert result.recipe.meal_types == ["dinner"]
+    assert result.recipe.difficulty == "unknown"
+    assert result.estimated_fields == ["meal_types"]
+    assert result.confidence == 0.90
+    assert result.warnings
+
+
+def test_ai_importer_does_not_repair_invalid_recipe_core() -> None:
+    client = AsyncMock()
+    client.model = "qwen3.5:4b"
+    client.provider = "ollama"
+    client.generate_json.return_value = {
+        "title": "Beschadigd recept",
+        "ingredients": [{"unit": "g"}],
+        "instructions": ["Meng alles."],
+        "estimated_fields": ["warnings"],
+    }
+    importer = AIRecipeImporter(client=client)
+
+    with pytest.raises(AIValidationError, match="recipe schema"):
+        asyncio.run(
+            importer.import_text(
+                "Beschadigd recept",
+                context=AIRecipeContext(source_type=SourceType.MANUAL),
+            )
+        )
+
+
+def test_ai_importer_keeps_named_ingredient_with_invalid_optional_details() -> None:
+    client = AsyncMock()
+    client.model = "qwen3.5:4b"
+    client.provider = "ollama"
+    client.generate_json.return_value = {
+        "title": "Pizzadeeg",
+        "ingredients": [
+            {
+                "name": "bloem",
+                "quantity": -550,
+                "unit": "g",
+                "confidence": "unsupported ingredient field",
+            }
+        ],
+        "instructions": ["Kneed het deeg."],
+    }
+    importer = AIRecipeImporter(client=client)
+
+    result = asyncio.run(
+        importer.import_text(
+            "Pizzadeeg",
+            context=AIRecipeContext(source_type=SourceType.MANUAL),
+        )
+    )
+
+    assert len(result.recipe.ingredients) == 1
+    assert result.recipe.ingredients[0].name == "bloem"
+    assert result.recipe.ingredients[0].quantity is None
+    assert result.recipe.ingredients[0].unit == "g"
+    assert result.confidence == 0.90
+    assert result.warnings
+
+
 def test_ai_image_importer_passes_image_to_client() -> None:
     client = AsyncMock()
     client.model = "qwen3.5:4b"

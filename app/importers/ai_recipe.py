@@ -1,13 +1,45 @@
+import logging
+from copy import deepcopy
 from dataclasses import dataclass, field
 from datetime import UTC, datetime
+from typing import Any
 
 from pydantic import ValidationError
 
 from app.ai.exceptions import AIValidationError
 from app.ai.prompts import build_full_recipe_extraction_prompt
 from app.ai.protocols import JSONGenerator
-from app.ai.schemas import AIRecipeResult
+from app.ai.schemas import (
+    AI_RECIPE_FIELD_NAMES,
+    AI_RECIPE_MEAL_TYPES,
+    AIIngredient,
+    AIRecipeResult,
+)
 from app.models.recipe import Ingredient, Recipe, SourceType
+
+logger = logging.getLogger(__name__)
+
+_REQUIRED_RECIPE_FIELDS = frozenset({"title", "ingredients", "instructions"})
+_STRING_LIST_FIELDS = frozenset(
+    {
+        "instructions",
+        "cuisine",
+        "meal_types",
+        "dietary",
+        "tags",
+        "warnings",
+        "estimated_fields",
+        "confidence_reasons",
+    }
+)
+_REPAIR_WARNING = (
+    "De AI-uitvoer bevatte ongeldige aanvullende metadata. Het bruikbare "
+    "recept is behouden; controleer de preview extra zorgvuldig."
+)
+_REPAIR_CONFIDENCE_REASON = (
+    "Herstelbare schema-afwijkingen in de AI-uitvoer zijn automatisch gecorrigeerd."
+)
+_REPAIRED_CONFIDENCE_CAP = 0.90
 
 
 @dataclass(frozen=True, slots=True)
@@ -83,10 +115,39 @@ class AIRecipeImporter:
     ) -> AIRecipeImport:
         try:
             result = AIRecipeResult.model_validate(payload)
-        except ValidationError as exc:
-            raise AIValidationError(
-                "The model output does not satisfy the recipe schema"
-            ) from exc
+        except ValidationError as original_error:
+            repaired = _repair_recoverable_ai_payload(payload)
+            if repaired is None:
+                raise AIValidationError(
+                    "The model output does not satisfy the recipe schema"
+                ) from original_error
+
+            result, repaired_fields = repaired
+            logger.warning(
+                "Recovered an AI recipe with invalid non-essential output fields",
+                extra={"ai_repaired_fields": sorted(repaired_fields)},
+            )
+            result = result.model_copy(
+                update={
+                    "warnings": list(
+                        dict.fromkeys([*result.warnings, _REPAIR_WARNING])
+                    ),
+                    "confidence": min(
+                        result.confidence
+                        if result.confidence is not None
+                        else _REPAIRED_CONFIDENCE_CAP,
+                        _REPAIRED_CONFIDENCE_CAP,
+                    ),
+                    "confidence_reasons": list(
+                        dict.fromkeys(
+                            [
+                                *result.confidence_reasons,
+                                _REPAIR_CONFIDENCE_REASON,
+                            ]
+                        )
+                    ),
+                }
+            )
 
         return map_ai_result_to_recipe(
             result,
@@ -94,6 +155,143 @@ class AIRecipeImporter:
             model=self.client.model,
             provider=self.client.provider,
         )
+
+
+def _repair_recoverable_ai_payload(
+    payload: dict[str, object],
+) -> tuple[AIRecipeResult, set[str]] | None:
+    """Keep a valid recipe core when only AI output metadata is malformed."""
+    candidate: dict[str, Any] = deepcopy(payload)
+    repaired_fields: set[str] = set()
+    model_fields = AIRecipeResult.model_fields
+
+    for field_name in set(candidate) - set(model_fields):
+        candidate.pop(field_name)
+        repaired_fields.add(field_name)
+
+    for field_name in _STRING_LIST_FIELDS:
+        value = candidate.get(field_name)
+        if isinstance(value, str):
+            candidate[field_name] = [value]
+            repaired_fields.add(field_name)
+
+    ingredients = candidate.get("ingredients")
+    if isinstance(ingredients, dict):
+        candidate["ingredients"] = [ingredients]
+        repaired_fields.add("ingredients")
+
+    _filter_allowed_list_values(
+        candidate,
+        field_name="estimated_fields",
+        allowed=AI_RECIPE_FIELD_NAMES,
+        repaired_fields=repaired_fields,
+    )
+    _filter_allowed_list_values(
+        candidate,
+        field_name="meal_types",
+        allowed=AI_RECIPE_MEAL_TYPES,
+        repaired_fields=repaired_fields,
+    )
+
+    for _ in range(len(model_fields)):
+        try:
+            return AIRecipeResult.model_validate(candidate), repaired_fields
+        except ValidationError as error:
+            invalid_optional_fields: set[str] = set()
+            made_change = False
+
+            for detail in error.errors():
+                location = detail.get("loc", ())
+                top_level = location[0] if location else None
+                if not isinstance(top_level, str):
+                    return None
+                if top_level in _REQUIRED_RECIPE_FIELDS:
+                    if top_level == "ingredients" and _repair_ingredient_detail(
+                        candidate,
+                        location=location,
+                        repaired_fields=repaired_fields,
+                    ):
+                        made_change = True
+                        continue
+                    return None
+                if top_level not in model_fields:
+                    return None
+                invalid_optional_fields.add(top_level)
+
+            if not invalid_optional_fields and not made_change:
+                return None
+
+            for field_name in invalid_optional_fields:
+                default = model_fields[field_name].get_default(
+                    call_default_factory=True
+                )
+                if candidate.get(field_name) != default:
+                    candidate[field_name] = default
+                    repaired_fields.add(field_name)
+                    made_change = True
+
+            if not made_change:
+                return None
+
+    return None
+
+
+def _repair_ingredient_detail(
+    candidate: dict[str, Any],
+    *,
+    location: tuple[int | str, ...],
+    repaired_fields: set[str],
+) -> bool:
+    if len(location) < 3 or not isinstance(location[1], int):
+        return False
+
+    ingredients = candidate.get("ingredients")
+    index = location[1]
+    field_name = location[2]
+    if (
+        not isinstance(ingredients, list)
+        or index >= len(ingredients)
+        or not isinstance(ingredients[index], dict)
+        or not isinstance(field_name, str)
+        or field_name == "name"
+    ):
+        return False
+
+    ingredient = ingredients[index]
+    ingredient_fields = AIIngredient.model_fields
+    repair_label = f"ingredients.{field_name}"
+
+    if field_name not in ingredient_fields:
+        if field_name not in ingredient:
+            return False
+        ingredient.pop(field_name)
+        repaired_fields.add(repair_label)
+        return True
+
+    default = ingredient_fields[field_name].get_default(call_default_factory=True)
+    if ingredient.get(field_name) == default:
+        return False
+
+    ingredient[field_name] = default
+    repaired_fields.add(repair_label)
+    return True
+
+
+def _filter_allowed_list_values(
+    candidate: dict[str, Any],
+    *,
+    field_name: str,
+    allowed: frozenset[str],
+    repaired_fields: set[str],
+) -> None:
+    value = candidate.get(field_name)
+    if not isinstance(value, list):
+        return
+
+    filtered = [item for item in value if isinstance(item, str) and item in allowed]
+    if filtered != value:
+        candidate[field_name] = filtered
+        repaired_fields.add(field_name)
 
 
 def map_ai_result_to_recipe(
