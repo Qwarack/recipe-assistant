@@ -1,5 +1,5 @@
 import asyncio
-from unittest.mock import AsyncMock
+from unittest.mock import AsyncMock, Mock
 
 import pytest
 from app.ai.exceptions import AIFallbackNotAllowedError, AIUnavailableError
@@ -221,6 +221,68 @@ def test_openai_fallback_uses_original_source_after_local_failure() -> None:
     assert session.metadata.ai_model == "gpt-5-nano"
     assert session.metadata.attempts[-2].success is False
     assert session.metadata.attempts[-1].success is True
+
+
+def test_openai_image_fallback_receives_original_image_and_text(tmp_path) -> None:
+    repository = ImportSessionRepository()
+    source_image = b"\x89PNG\r\n\x1a\noriginal-recipe-image"
+    image_path = tmp_path / "recipe.png"
+    image_path.write_bytes(source_image)
+
+    local_importer = AsyncMock()
+    local_importer.import_image.side_effect = AIUnavailableError("offline")
+    openai_importer = AsyncMock()
+    openai_importer.import_image.return_value = AIRecipeImport(
+        recipe=_recipe("ChatGPT image recipe").model_copy(
+            update={"extractor": "openai:gpt-5-nano"}
+        ),
+        extracted_fields=["title", "ingredients", "instructions"],
+        estimated_fields=[],
+        warnings=[],
+    )
+    loader = AsyncMock()
+    loader.load_image = Mock(return_value=source_image)
+    orchestrator = AIImportOrchestrator(
+        repository=repository,
+        importer=local_importer,
+        enrichment_service=AsyncMock(),
+        source_loader=loader,
+        ai_model="qwen3.5:4b",
+        openai_importer=openai_importer,
+        openai_model="gpt-5-nano",
+    )
+    pending_result = ImportResult(
+        status=ImportStatus.FAILED,
+        raw_input_reference="recipe.png",
+    )
+    orchestrator.register_normal_result(
+        result=pending_result,
+        source=ImportSource(
+            source_type=SourceType.IMAGE,
+            raw_text="Original OCR text",
+            temporary_file_path=image_path,
+            original_filename="recipe.png",
+            content_type="image/png",
+        ),
+    )
+
+    with pytest.raises(AIUnavailableError):
+        asyncio.run(
+            orchestrator.parse_with_ai(
+                pending_result.import_id,
+                reason=AIParseReason.IMAGE_INPUT,
+            )
+        )
+
+    session = asyncio.run(orchestrator.parse_with_openai(pending_result.import_id))
+
+    openai_importer.import_image.assert_awaited_once()
+    image_call = openai_importer.import_image.await_args
+    assert image_call.args == (source_image,)
+    assert image_call.kwargs["source_text"] == "Original OCR text"
+    assert image_call.kwargs["context"].source_type is SourceType.IMAGE
+    assert session.active_result.recipe.title == "ChatGPT image recipe"
+    assert session.metadata.parse_method is ParseMethod.OPENAI_FALLBACK
 
 
 def test_failed_normal_parse_can_be_retried_with_same_source() -> None:

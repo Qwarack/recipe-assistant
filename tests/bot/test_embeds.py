@@ -183,6 +183,7 @@ def test_failed_embed_explains_external_openai_cost_and_consent() -> None:
         field for field in embed.fields if field.name == "Laatste externe optie"
     )
     assert "oorspronkelijke receptbron" in fallback_field.value
+    assert "inclusief de geüploade afbeelding" in fallback_field.value
     assert "alleen als je op de knop klikt" in fallback_field.value
     assert "API-kosten" in fallback_field.value
 

@@ -502,7 +502,8 @@ class RecipeImportView(discord.ui.View):
                 "Qwen3.5 is geprobeerd en mislukt; de bestaande preview is "
                 "behouden. Als laatste optie kun je **Laatste poging met ChatGPT "
                 "(API)** kiezen. Alleen dan wordt de oorspronkelijke receptbron "
-                "naar OpenAI gestuurd en kunnen API-kosten ontstaan."
+                "naar OpenAI gestuurd, inclusief de geüploade afbeelding bij een "
+                "foto-import. Er kunnen API-kosten ontstaan."
             ),
             ephemeral=NOTICE_EPHEMERAL,
         )
@@ -756,8 +757,9 @@ class ImportFailedView(discord.ui.View):
             (
                 "Qwen3.5 is geprobeerd en mislukt. Als laatste optie kun je "
                 "**Laatste poging met ChatGPT (API)** kiezen. Alleen na die klik "
-                "wordt de oorspronkelijke receptbron naar OpenAI gestuurd en "
-                "kunnen API-kosten ontstaan."
+                "wordt de oorspronkelijke receptbron naar OpenAI gestuurd, "
+                "inclusief de geüploade afbeelding bij een foto-import. Er kunnen "
+                "API-kosten ontstaan."
             ),
             ephemeral=NOTICE_EPHEMERAL,
         )

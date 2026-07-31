@@ -95,8 +95,9 @@ def build_recipe_import_embed(
                 value=(
                     "Qwen3.5 is al geprobeerd. Met **Laatste poging met "
                     "ChatGPT (API)** wordt de oorspronkelijke receptbron naar "
-                    "OpenAI gestuurd. Dit gebeurt alleen als je op de knop klikt "
-                    "en kan API-kosten veroorzaken."
+                    "OpenAI gestuurd, inclusief de geüploade afbeelding bij een "
+                    "foto-import. Dit gebeurt alleen als je op de knop klikt en "
+                    "kan API-kosten veroorzaken."
                 ),
                 inline=False,
             )
@@ -256,8 +257,9 @@ def build_recipe_import_embed(
             name="Laatste externe optie",
             value=(
                 f"{local_outcome} Met **Laatste poging met ChatGPT (API)** wordt "
-                "de oorspronkelijke receptbron naar OpenAI gestuurd. Dit gebeurt "
-                "alleen na je klik en kan API-kosten veroorzaken."
+                "de oorspronkelijke receptbron naar OpenAI gestuurd, inclusief "
+                "de geüploade afbeelding bij een foto-import. Dit gebeurt alleen "
+                "na je klik en kan API-kosten veroorzaken."
             ),
             inline=False,
         )

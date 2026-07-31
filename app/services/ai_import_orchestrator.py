@@ -504,6 +504,7 @@ class AIImportOrchestrator:
             return await importer.import_image(
                 self.source_loader.load_image(session.source),
                 context=context,
+                source_text=session.source.raw_text,
             )
 
         source_text = await self.source_loader.load_text(session.source)
